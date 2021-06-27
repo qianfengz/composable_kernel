@@ -23,8 +23,8 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef CK_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
-#define CK_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
+#ifndef CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
+#define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
 
 #include "float_type.hpp"
 #include "reduction_operator.hpp"
@@ -38,15 +38,14 @@ namespace ck {
 template <index_t BlockSize,
           typename srcDataType,
           typename dstDataType,
-          typename src2dDesc,
-          typename dst1dDesc,
+          typename src2dDescType,
+          typename dst1dDescType,
           typename compType,
           ReduceTensorOp_t op,
           NanPropagation_t nanPropaOpt,
           ReduceTensorIndices_t reduceIndicesOpt,
           bool isFirstCall,
           bool isLastCall,
-          index_t origReduceLen,
           index_t GredThreadBufferLength>
 struct GridwiseReduction_xy_to_x_direct_threadwise
 {
@@ -56,15 +55,14 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
     static constexpr auto toReduceLength = src2dDesc::GetLength(Number<1>{});
 
-    static constexpr auto divider = static_cast<int>(origReduceLen);
-
     using opReduce = typename reduce_binary_operator<compType, op>::opType;
     using preUnaryOp =
         typename reduce_unary_operator<compType, op, divider, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOp =
         typename reduce_unary_operator<compType, op, divider, isFirstCall, isLastCall>::posUnaryOp;
 
-    __device__ void Run(srcDataType alpha,
+    __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, 
+		        srcDataType alpha,
                         const srcDataType* const __restrict__ p_src_global,
                         dstDataType beta,
                         dstDataType* const __restrict__ p_dst_global,
@@ -81,7 +79,8 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         }).Else([&](auto) { RunImpl1(alpha, p_src_global, beta, p_dst_global); });
     };
 
-    __device__ static void RunImpl1(srcDataType alpha,
+    __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc,
+		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global)
@@ -177,7 +176,8 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         threadwise_dst_store.Run(&accuValue, p_dst_global, zeroVal);
     };
 
-    __device__ static void RunImpl2(srcDataType alpha,
+    __device__ static void RunImpl2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc,
+		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global,
@@ -277,7 +277,8 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         threadwise_dst_store.Run(&accuIndex, indices_global, 0);
     };
 
-    __device__ static void RunImpl3(srcDataType alpha,
+    __device__ static void RunImpl3(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc,
+		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global,
