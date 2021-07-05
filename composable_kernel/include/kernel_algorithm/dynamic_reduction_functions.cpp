@@ -23,13 +23,13 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef CK_REDUCTION_FUNCTIONS_HPP
-#define CK_REDUCTION_FUNCTIONS_HPP
+#ifndef CK_DYNAMIC_REDUCTION_FUNCTIONS_HPP
+#define CK_DYNAMIC_REDUCTION_FUNCTIONS_HPP
 
 #include "float_type.hpp"
 
 #include "reduction_common.hpp"
-#include "reduction_operator.hpp"
+#include "dynamic_reduction_operator.hpp"
 
 namespace ck {
 namespace detail {
@@ -52,7 +52,7 @@ struct binop_with_nan_check<NanPropagation_t::NOT_PROPAGATE_NAN, opReduce, compT
     // The method is called when the opReduce is indexable and the user asked for indices
     __device__ static inline void calculate(const compType& accuVal,
                                             compType currVal,
-                                            VOLATILE_WA_274384 int& accuIndex,
+                                            int& accuIndex,
                                             int currIndex)
     {
         VOLATILE_WA_274384 bool changed = false;
@@ -152,11 +152,11 @@ struct ThreadReduce
     };
 
     // Execute unary operation on the per-thread buffer elements
-    template <typename unary_op>
-    __device__ static void operate_on_elements(DataType* p_thread_buffer)
+    template <typename unary_op_type>
+    __device__ static void operate_on_elements(unary_op_type & unary_op, DataType* p_thread_buffer)
     {
         for(index_t i = 0; i < ThreadBufferLen; i++)
-            unary_op{}(p_thread_buffer[i]);
+            unary_op(p_thread_buffer[i]);
     };
 };
 
@@ -445,11 +445,11 @@ struct WarpReduce
     };
 
     // Execute unary operation on the per-thread buffer elements
-    template <typename unary_op>
-    __device__ static void operate_on_elements(DataType* p_thread_buffer)
+    template <typename unary_op_type>
+    __device__ static void operate_on_elements(unary_op_type & unary_op, DataType* p_thread_buffer)
     {
         for(index_t i = 0; i < ThreadBufferLen; i++)
-            unary_op{}(p_thread_buffer[i]);
+            unary_op(p_thread_buffer[i]);
 
         __all(1);
     };
@@ -531,7 +531,7 @@ struct BlockwiseReduction_2d_block_buffer
     {
         const index_t thread_local_id     = get_thread_local_1d_id();
         compType lAccuData                = opReduce::GetZeroVal();
-        VOLATILE_WA_274384 int lAccuIndex = 0;
+        int lAccuIndex = 0;
 
         static_if<blockIsOneRow>{}([&](auto) {
             for(index_t otherDimInd = 0; otherDimInd < toReduceBlocks; otherDimInd++)
@@ -658,8 +658,8 @@ struct BlockwiseReduction_2d_block_buffer
     };
 
     // Execute unary operation on the block buffer elements
-    template <typename unary_op>
-    __device__ static void operate_on_elements(DataType* p_block_buffer)
+    template <typename unary_op_type>
+    __device__ static void operate_on_elements(unary_op_type & unary_op, DataType* p_block_buffer)
     {
         index_t thread_id = get_thread_local_1d_id();
 
@@ -669,7 +669,7 @@ struct BlockwiseReduction_2d_block_buffer
                                  ? buffer2dDesc::CalculateOffset({otherDimInd, thread_id})
                                  : buffer2dDesc::CalculateOffset({thread_id, otherDimInd});
 
-            unary_op{}(p_block_buffer[offset]);
+            unary_op(p_block_buffer[offset]);
 
             __syncthreads();
         }

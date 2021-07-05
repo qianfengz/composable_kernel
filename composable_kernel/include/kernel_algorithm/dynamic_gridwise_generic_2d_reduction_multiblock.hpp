@@ -23,15 +23,15 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef CK_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
-#define CK_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
+#ifndef CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
+#define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
 
 #include "float_type.hpp"
-#include "reduction_operator.hpp"
-#include "reduction_functions.hpp"
+#include "dynamic_reduction_operator.hpp"
+#include "dynamic_reduction_functions.hpp"
 #include "reduction_common.hpp"
 
-#include "blockwise_generic_tensor_slice_copy.hpp"
+#include "blockwise_dynamic_generic_tensor_slice_transfer.hpp"
 #include "ConstantMatrixDescriptor.hpp"
 
 namespace ck {
@@ -39,13 +39,12 @@ namespace ck {
 template <index_t BlockSize,
           typename srcDataType,
           typename dstDataType, // not used together with the beta input
-          typename src2dDesc,
-          typename dst1dDesc,
+          typename src2dDescType,
+          typename dst1dDescType,
           typename compType,
           ReduceTensorOp_t op,
           NanPropagation_t nanPropaOpt,
           ReduceTensorIndices_t reduceIndicesOpt,
-          index_t origReduceLen,
           index_t blkGroupSize, // The number of blocks for doing each reduction
           index_t GredAccessesPerThreadInBlock>
 struct GridwiseReduction_xy_to_x_multiblock
@@ -56,26 +55,24 @@ struct GridwiseReduction_xy_to_x_multiblock
 
     static constexpr auto toReduceLength = src2dDesc::GetLength(Number<1>{});
 
-    static constexpr auto divider = static_cast<int>(origReduceLen);
-
     using opReduce = typename reduce_binary_operator<compType, op>::opType;
-    using preUnaryOp =
-        typename reduce_unary_operator<compType, op, divider, true, false>::preUnaryOp;
-    using posUnaryOp =
-        typename reduce_unary_operator<compType, op, divider, true, false>::posUnaryOp;
+    using preUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::preUnaryOp;
+    using posUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::posUnaryOp;
 
-    __device__ void Run(srcDataType alpha,
+    __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
+		        srcDataType alpha,
                         const srcDataType* const __restrict__ p_src_global,
                         dstDataType beta,
                         srcDataType* const __restrict__ workspace_global,
                         int* const __restrict__ ws_indices_global)
     {
         static_if<need_indices>{}([&](auto) {
-            RunImpl2(alpha, p_src_global, beta, workspace_global, ws_indices_global);
-        }).Else([&](auto) { RunImpl1(alpha, p_src_global, beta, workspace_global); });
+            RunImpl2(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, workspace_global, ws_indices_global);
+        }).Else([&](auto) { RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, workspace_global); });
     };
 
-    __device__ static void RunImpl1(srcDataType alpha,
+    __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
+		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
                                     srcDataType* const __restrict__ workspace_global)
@@ -88,9 +85,19 @@ struct GridwiseReduction_xy_to_x_multiblock
         // LDS
         __shared__ compType p_in_block_buffer[BlockBufferSize];
 
-        // VGPR, only useful for thread 0
-        auto zeroVal       = opReduce::GetZeroVal();
-        compType accuValue = zeroVal;
+        const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        const auto workspace_global_buf = make_dynamic_buffer<AddressSpace::Global>(workspace_global, dst1dDesc.GetLength(Number<0>{}) * blkGroupSize);
+
+        const auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
+        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
+
+        auto zeroVal = opReduce::GetZeroVal();
+        accuValue_buf[0] = zeroVal;
+
+        const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
+        const int divider = origReduceLen;
+
+        const preUnaryOpType preUnaryOp(divider);
 
         const index_t thread_local_id = get_thread_local_1d_id();
         const index_t block_global_id = get_block_1d_id();
@@ -98,36 +105,37 @@ struct GridwiseReduction_xy_to_x_multiblock
         const index_t block_local_id  = block_global_id % blkGroupSize;
 
         constexpr index_t reduceSizePerBlock =
-            (((src2dDesc::GetLengths()[1] + blkGroupSize - 1) / blkGroupSize + BlockBufferSize -
-              1) /
-             BlockBufferSize) *
-            BlockBufferSize;
+            (((toReduceLength + blkGroupSize - 1) / blkGroupSize + BlockBufferSize - 1) / BlockBufferSize) * BlockBufferSize;
 
-        constexpr auto in_block_desc = make_native_tensor_descriptor_packed(
-            Sequence<1, BlockSize * GredAccessesPerThreadInBlock>{});
+        constexpr auto in_block_desc = make_native_tensor_descriptor_packed(Sequence<1, BlockSize * GredAccessesPerThreadInBlock>{});
 
         using ThreadSliceLengths   = Sequence<1, GredAccessesPerThreadInBlock>;
         using ThreadClusterLengths = Sequence<1, BlockSize>;
 
         auto blockwise_src_load =
-            BlockwiseGenericTensorSliceCopy_v4<BlockSize,
-                                               src2dDesc,
-                                               decltype(in_block_desc),
-                                               decltype(in_block_desc.GetLengths()),
-                                               ThreadSliceLengths,
-                                               ThreadClusterLengths,
-                                               Sequence<0, 1>,
-                                               Sequence<0, 1>,
-                                               Sequence<0, 1>,
-                                               1,
-                                               1,
-                                               1,
-                                               1,
-                                               AddressSpace::Global,
-                                               AddressSpace::Vgpr,
-                                               AddressSpace::Lds,
-                                               InMemoryDataOperation::Set>(
-                {blkgroup_id, block_local_id * reduceSizePerBlock}, {0, 0});
+            BlockwiseDynamicTensorSliceTransfer_v4<BlockSize,
+                                                   InMemoryDataOperation::Set,
+                                                   Sequence<1, BlockBufferSize>,
+                                                   ThreadSliceLengths,
+                                                   ThreadClusterLengths,
+                                                   Sequence<0, 1>,
+                                                   srcDataType,
+                                                   compType,
+                                                   src2dDescType,
+                                                   decltype(in_block_desc),
+                                                   Sequence<0, 1>,
+                                                   Sequence<0, 1>,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   false,
+                                                   true>(src2dDesc,
+                                                         make_multi_index(blkgroup_id, block_local_id * reduceSizePerBlock),
+                                                         in_block_desc,
+                                                         make_multi_index(0, 0));
 
         constexpr auto block_buff_2d_desc = make_native_tensor_descriptor_packed(
             Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
@@ -143,55 +151,54 @@ struct GridwiseReduction_xy_to_x_multiblock
         for(index_t reducedBlocks = 0; reducedBlocks < toReduceBlocks;
             reducedBlocks += GredAccessesPerThreadInBlock)
         {
-            blockwise_reduce::set_buffer_value(p_in_block_buffer, zeroVal);
+            blockwise_reduce::set_buffer_value(in_block_buf, zeroVal);
 
-            // load block data from global to LDS, no use of double buffers (to be improved)
-            blockwise_src_load.Run(
-                p_src_global, p_in_block_buffer, type_convert<srcDataType>{}(zeroVal));
+            blockwise_src_load.RunRead(src2dDesc, src_global_buf, type_convert<srcDataType>{}(zeroVal));
+            blockwise_src_load.RunWrite(in_block_desc, in_block_buf, zeroVal);
             __syncthreads();
 
             // do element-wise pre-reduction operation
-            blockwise_reduce::template operate_on_elements<preUnaryOp>(p_in_block_buffer);
+            blockwise_reduce::operate_on_elements(preUnaryOp, in_block_buf);
 
             index_t BlocksInOneOp = (reducedBlocks < toReduceBlocks - GredAccessesPerThreadInBlock)
                                         ? GredAccessesPerThreadInBlock
                                         : toReduceBlocks - reducedBlocks;
-            blockwise_reduce::Reduce(p_in_block_buffer, BlocksInOneOp, accuValue);
+            blockwise_reduce::Reduce(in_block_buf, BlocksInOneOp, accuValue);
 
-            constexpr auto True = integral_constant<bool, true>{};
-            blockwise_src_load.MoveSrcSliceWindow(Sequence<0, BlockBufferSize>{}, True);
+            blockwise_src_load.MoveSrcSliceWindow(src2dDesc, Sequence<0, BlockBufferSize>{});
         }
 
         using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
 
-        constexpr auto workspace_desc = make_native_tensor_descriptor_packed(
-            Sequence<dst1dDesc::GetLengths()[0] * blkGroupSize>{});
+        const auto workspace_desc = make_dynamic_native_tensor_descriptor_packed(dst1dDesc.GetLength(Number<0>{}) * blkGroupSize);
 
         // The first thread in the block stores the reduced result to the global location
         // representing the block
         if(thread_local_id == 0)
         {
-            auto threadwise_workspace_store =
-                ThreadwiseGenericTensorSliceCopy_v4r2<decltype(ReducedDataDesc),
-                                                      decltype(workspace_desc),
-                                                      ReducedDataLengths,
-                                                      Sequence<0>,
-                                                      0,
-                                                      1,
-                                                      1,
-                                                      AddressSpace::Vgpr,
-                                                      AddressSpace::Global,
-                                                      InMemoryDataOperation::Set>(
-                    {0}, {block_global_id});
-            threadwise_workspace_store.Run(&accuValue, workspace_global, zeroVal);
+            auto threadwise_workspace_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
+                                                                   compType,
+                                                                   compType,
+                                                                   decltype(ReducedDataDesc),
+                                                                   decltype(workspace_desc),
+                                                                   ReducedDataLengths,
+                                                                   Sequence<0>,
+                                                                   0,
+                                                                   1,
+                                                                   InMemoryDataOperation::Set,
+                                                                   1,
+                                                                   false>(dst1Desc, make_multi_index(block_global_id));
+
+            threadwise_workspace_store.Run(ReducedDataDesc, accuValue_buf, workspace_desc, workspace_global_buf, zeroVal);	    
         }
     };
 
-    __device__ static void RunImpl2(srcDataType alpha,
+    __device__ static void RunImpl2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen,
+		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
-                                    srcDataType* const __restrict__ workspace_global,
+                                    srcDataType* const __restrict__ ws_values_global,
                                     int* const __restrict__ ws_indices_global)
     {
         (void)alpha; // unused
@@ -200,53 +207,66 @@ struct GridwiseReduction_xy_to_x_multiblock
         constexpr index_t BlockBufferSize = BlockSize * GredAccessesPerThreadInBlock;
 
         // LDS
-        __shared__ compType p_in_block_buffer[BlockBufferSize];
-        __shared__ int block_indices_buffer[BlockBufferSize];
+        __shared__ compType p_in_block_values_buffer[BlockBufferSize];
+        __shared__ int p_in_block_indices_buffer[BlockBufferSize];
 
-        // VGPR, only useful for thread 0
-        auto zeroVal       = opReduce::GetZeroVal();
-        compType accuValue = zeroVal;
-        int accuIndex      = 0;
+        const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        const auto workspace_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, dst1dDesc.GetLength(Number<0>{}) * blkGroupSize);
+        const auto workspace_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, dst1dDesc.GetLength(Number<0>{}) * blkGroupSize);
 
+        const auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_values_buffer, BlockBufferSize);
+        const auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_indices_buffer, BlockBufferSize);
+        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
+        StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
+
+        auto zeroVal = opReduce::GetZeroVal();
+        accuValue_buf[0] = zeroVal;
+        accuIndex_buf[0] = 0; 
+	
+        const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
+        const int divider = origReduceLen;
+
+        const preUnaryOpType preUnaryOp(divider);
+	
         const index_t thread_local_id = get_thread_local_1d_id();
         const index_t block_global_id = get_block_1d_id();
         const index_t blkgroup_id     = block_global_id / blkGroupSize;
         const index_t block_local_id  = block_global_id % blkGroupSize;
 
         constexpr index_t reduceSizePerBlock =
-            (((src2dDesc::GetLengths()[1] + blkGroupSize - 1) / blkGroupSize + BlockBufferSize -
-              1) /
-             BlockBufferSize) *
-            BlockBufferSize;
+            (((toReduceLength + blkGroupSize - 1) / blkGroupSize + BlockBufferSize - 1) / BlockBufferSize) * BlockBufferSize;
 
-        constexpr auto in_block_desc = make_native_tensor_descriptor_packed(
-            Sequence<1, BlockSize * GredAccessesPerThreadInBlock>{});
+        constexpr auto in_block_desc = make_native_tensor_descriptor_packed(Sequence<1, BlockSize * GredAccessesPerThreadInBlock>{});
 
         using ThreadSliceLengths   = Sequence<1, GredAccessesPerThreadInBlock>;
         using ThreadClusterLengths = Sequence<1, BlockSize>;
 
         auto blockwise_src_load =
-            BlockwiseGenericTensorSliceCopy_v4<BlockSize,
-                                               src2dDesc,
-                                               decltype(in_block_desc),
-                                               decltype(in_block_desc.GetLengths()),
-                                               ThreadSliceLengths,
-                                               ThreadClusterLengths,
-                                               Sequence<0, 1>,
-                                               Sequence<0, 1>,
-                                               Sequence<0, 1>,
-                                               1,
-                                               1,
-                                               1,
-                                               1,
-                                               AddressSpace::Global,
-                                               AddressSpace::Vgpr,
-                                               AddressSpace::Lds,
-                                               InMemoryDataOperation::Set>(
-                {blkgroup_id, block_local_id * reduceSizePerBlock}, {0, 0});
+            BlockwiseDynamicTensorSliceTransfer_v4<BlockSize,
+                                                   InMemoryDataOperation::Set,
+                                                   Sequence<1, BlockBufferSize>,
+                                                   ThreadSliceLengths,
+                                                   ThreadClusterLengths,
+                                                   Sequence<0, 1>,
+                                                   srcDataType,
+                                                   compType,
+                                                   src2dDescType,
+                                                   decltype(in_block_desc),
+                                                   Sequence<0, 1>,
+                                                   Sequence<0, 1>,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   1,
+                                                   false,
+                                                   true>(src2dDesc,
+                                                         make_multi_index(blkgroup_id, block_local_id * reduceSizePerBlock),
+                                                         in_block_desc,
+                                                         make_multi_index(0, 0));
 
-        constexpr auto block_buff_2d_desc = make_native_tensor_descriptor_packed(
-            Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
+        constexpr auto block_buff_2d_desc = make_native_tensor_descriptor_packed(Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
 
         using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc),
                                                                     compType,
@@ -256,63 +276,75 @@ struct GridwiseReduction_xy_to_x_multiblock
 
         constexpr index_t toReduceBlocks = (reduceSizePerBlock + BlockSize - 1) / BlockSize;
 
-        blockwise_reduce::set_buffer_value(p_in_block_buffer, zeroVal);
+        blockwise_reduce::set_buffer_value(in_block_val_buf, zeroVal);
 
         int indexOffset = block_local_id * reduceSizePerBlock;
 
         for(index_t reducedBlocks = 0; reducedBlocks < toReduceBlocks;
             reducedBlocks += GredAccessesPerThreadInBlock)
         {
-            blockwise_reduce::init_buffer_indices(block_indices_buffer, indexOffset);
+            blockwise_reduce::init_buffer_indices(in_block_idx_buf, indexOffset);
 
-            // load block data from global to LDS, no use of double buffers (to be improved)
-            blockwise_src_load.Run(
-                p_src_global, p_in_block_buffer, type_convert<srcDataType>{}(zeroVal));
+            blockwise_src_load.RunRead(src2dDesc, src_global_buf, in_block_desc, type_convert<srcDataType>{}(zeroVal));
+            blockwise_src_load.RunWrite(in_block_desc, in_block_val_buf, zeroVal);
+
             __syncthreads();
 
             // unary operation before reducing, needed by AMAX; For MIN/MAX, nothing is actually
             // done here
-            blockwise_reduce::template operate_on_elements<preUnaryOp>(p_in_block_buffer);
+            blockwise_reduce::operate_on_elements(preUnaryOp, in_block_val_buf);
 
             index_t BlocksInOneOp = (reducedBlocks < toReduceBlocks - GredAccessesPerThreadInBlock)
                                         ? GredAccessesPerThreadInBlock
                                         : toReduceBlocks - reducedBlocks;
 
-            blockwise_reduce::Reduce2(
-                p_in_block_buffer, block_indices_buffer, BlocksInOneOp, accuValue, accuIndex);
+            blockwise_reduce::Reduce2(in_block_val_buf, in_block_idx_buffer, BlocksInOneOp, accuValue_buf[0], accuIndex_buf[0]);
 
-            blockwise_reduce::set_buffer_value(p_in_block_buffer, zeroVal);
+            blockwise_reduce::set_buffer_value(in_block_val_buf, zeroVal);
 
             indexOffset += BlockBufferSize;
 
-            constexpr auto True = integral_constant<bool, true>{};
-            blockwise_src_load.MoveSrcSliceWindow(Sequence<0, BlockBufferSize>{}, True);
+            blockwise_src_load.MoveSrcSliceWindow(src2dDesc, Sequence<0, BlockBufferSize>{});
         }
 
         using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
 
-        constexpr auto workspace_desc = make_native_tensor_descriptor_packed(
-            Sequence<dst1dDesc::GetLengths()[0] * blkGroupSize>{});
+        constexpr auto workspace_desc = make_dynamic_native_tensor_descriptor_packed(dst1dDesc.GetLength(Number<0>{}) * blkGroupSize);
 
         // The first thread in the block stores the reduced result to the global location
         // representing the block
         if(thread_local_id == 0)
         {
-            auto threadwise_workspace_store =
-                ThreadwiseGenericTensorSliceCopy_v4r2<decltype(ReducedDataDesc),
-                                                      decltype(workspace_desc),
-                                                      ReducedDataLengths,
-                                                      Sequence<0>,
-                                                      0,
-                                                      1,
-                                                      1,
-                                                      AddressSpace::Vgpr,
-                                                      AddressSpace::Global,
-                                                      InMemoryDataOperation::Set>(
-                    {0}, {block_global_id});
-            threadwise_workspace_store.Run(&accuValue, workspace_global, zeroVal);
-            threadwise_workspace_store.Run(&accuIndex, ws_indices_global, 0);
+            auto threadwise_workspace_val_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
+                                                                   compType,
+                                                                   compType,
+                                                                   decltype(ReducedDataDesc),
+                                                                   decltype(workspace_desc),
+                                                                   ReducedDataLengths,
+                                                                   Sequence<0>,
+                                                                   0,
+                                                                   1,
+                                                                   InMemoryDataOperation::Set,
+                                                                   1,
+                                                                   false>(dst1Desc, make_multi_index(block_global_id));
+
+            auto threadwise_workspace_idx_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
+                                                                   int,
+                                                                   int,
+                                                                   decltype(ReducedDataDesc),
+                                                                   decltype(workspace_desc),
+                                                                   ReducedDataLengths,
+                                                                   Sequence<0>,
+                                                                   0,
+                                                                   1,
+                                                                   InMemoryDataOperation::Set,
+                                                                   1,
+                                                                   false>(dst1Desc, make_multi_index(block_global_id));
+
+
+            threadwise_workspace_val_store.Run(ReducedDataDesc, accuValue_buf, workspace_desc, workspace_global_val_buf, zeroVal);
+            threadwise_workspace_idx_store.Run(ReducedDataDesc, accuIndex_buf, workspace_desc, workspace_global_idx_buf, 0);
         }
     };
 };
