@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (c) 2020 Advanced Micro Devices, Inc.
+ * Copyright (c) 2017 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,55 +23,25 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef OLC_REDUCE_COMMON_HPP_
-#define OLC_REDUCE_COMMON_HPP_ 1
+#ifndef GUARD_CONFIG_H_IN
+#define GUARD_CONFIG_H_IN
 
-#include <half.hpp>
+// "_PACKAGE_" to avoid name contentions: the macros like
+// HIP_VERSION_MAJOR are defined in hip_version.h.
+// clang-format off
+#define HIP_PACKAGE_VERSION_MAJOR 3
+#define HIP_PACKAGE_VERSION_MINOR 8
+#define HIP_PACKAGE_VERSION_PATCH 20371
+// clang-format on
 
-typedef enum {
-    DirectThreadWise = 1,
-    DirectWarpWise   = 2,
-    BlockWise        = 3,
-    MultiBlock       = 4
-} ReductionMethod_t;
+#define HIP_PACKAGE_VERSION_FLAT                                                   \
+    ((HIP_PACKAGE_VERSION_MAJOR * 1000ULL + HIP_PACKAGE_VERSION_MINOR) * 1000000 + \
+     HIP_PACKAGE_VERSION_PATCH)
 
-typedef enum {
-    REDUCE_TENSOR_ADD = 0,
-    REDUCE_TENSOR_MUL = 1,
-    REDUCE_TENSOR_MIN = 2,
-    REDUCE_TENSOR_MAX = 3,
-    REDUCE_TENSOR_AMAX = 4,
-    REDUCE_TENSOR_AVG =  5,
-    REDUCE_TENSOR_NORM1 = 6,
-    REDUCE_TENSOR_NORM2 = 7
-} ReduceTensorOp_t;
+#define OLC_DEBUG 1
 
-typedef enum {
-    NOT_PROPAGATE_NAN = 0,
-    PROPAGATE_NAN     = 1,
-} NanPropagation_t;
-
-typedef enum {
-    REDUCE_TENSOR_NO_INDICES        = 0,
-    REDUCE_TENSOR_FLATTENED_INDICES = 1,
-} ReduceTensorIndices_t;
-
-typedef enum {
-    APP_32BIT_INDICES = 0,
-    APP_64BIT_INDICES = 1,
-    APP_16BIT_INDICES = 2,
-    APP_8BIT_INDICES  = 3,
-} IndicesType_t;
-
-namespace reduce {
-
-template <typename Tdst, typename Tsrc>
-static inline Tdst convert_type(Tsrc x)
-{
-    return static_cast<Tdst>(x);
-}
-
-
-} // namespace reduce
+#define OLC_HIP_COMPILER "/opt/rocm/llvm/bin/clang++"
+/* #undef EXTRACTKERNEL_BIN */
+#define OLC_OFFLOADBUNDLER_BIN "/opt/rocm/llvm/bin/clang-offload-bundler"
 
 #endif

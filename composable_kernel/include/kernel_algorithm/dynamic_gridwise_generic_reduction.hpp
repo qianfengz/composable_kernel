@@ -41,7 +41,6 @@ template <index_t BlkGroupSize,
           typename dstDataType,  // the type with which the data of the destintion tensor are stored
           typename compType,     // the type used by the reduce binary operator
           index_t op_I,     // the enumerate value representing the operation used in Reduction
-          index_t reduceImpl_I,       // the enumerate value representing the ReductionMethod
           index_t nanPropaOpt_I,      // the enumerate value representing the NanPropagation Option
           index_t reduceIndicesOpt_I, // the enumerate value representing the Reduce Indices Option
           index_t GredThreadBufferLength,

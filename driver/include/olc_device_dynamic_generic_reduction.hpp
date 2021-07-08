@@ -1,10 +1,8 @@
 #include "device.hpp"
 #include "host_tensor.hpp"
-#include "dynamic_tensor_descriptor.hpp"
-#include "dynamic_tensor_descriptor_helper.hpp"
-#include "transform_forward_convolution_into_gemm_v4r4_nchw_kcyx_nkhw.hpp"
 
 #include "olc_driver_common.hpp"
+#include "olc_reduce_common.hpp"
 #include "conv_tunables.hpp"
 
 #include "handle.hpp"
@@ -61,185 +59,394 @@ get_definition_string_from_tunable(const tunable_dyn_generic_reduction* pt)
     return (out);
 };
 
-} // namespace detail_dyn_conv_fwd_v4r4_nchw_kcyx_nkhw
+struct ReductionKernelConfigurator
+{
+    ReductionKernelConfigurator() = default;
+
+    ReductionKernelConfigurator(int blockSize, int warpSize)
+        : blockSize_(blockSize), warpSize_(warpSize)
+    {
+        GredDirectThreadWiseUpperReductionLen = warpSize;
+        GredDirectWarpWiseUpperReductionLen   = blockSize;
+        GredBlockWiseUpperReductionLen        = blockSize * 4;
+        GredUpperNumBlocksPerReduction        = 32;
+
+        numWarpsPerBlock = blockSize / warpSize;
+    };
+
+    int blockSize_;
+    int warpSize_;
+    int numWarpsPerBlock;
+
+    std::size_t GredDirectThreadWiseUpperReductionLen;
+    std::size_t GredDirectWarpWiseUpperReductionLen;
+    std::size_t GredBlockWiseUpperReductionLen;
+    std::size_t GredUpperNumBlocksPerReduction;
+
+    std::size_t getGridSize(std::size_t invariantLength, std::size_t toReduceLength) const
+    {
+        assert(invariantLength > 0 && toReduceLength > 1);
+
+        if(invariantLength == 1)
+        {
+            if(toReduceLength <=
+               GredBlockWiseUpperReductionLen) // let one block to do this only reduction
+                return (1);
+            else
+                return ((toReduceLength + blockSize_ - 1) /
+                        blockSize_); // let multiple blocks to do this only reduction
+        }
+        else
+        {
+            if(toReduceLength <=
+               GredDirectThreadWiseUpperReductionLen) // let one thread to do each reduction
+                return ((invariantLength + blockSize_ - 1) / blockSize_);
+            else if(toReduceLength <=
+                    GredDirectWarpWiseUpperReductionLen) // let one warp to do each reduction
+                return ((invariantLength + numWarpsPerBlock - 1) / numWarpsPerBlock);
+            else if(toReduceLength <=
+                    GredBlockWiseUpperReductionLen) // let one block to do each reduction
+                return (invariantLength);
+            else
+            { // let multiple blocks to do each reduction
+                std::size_t expBlocksPerReduction =
+                    (toReduceLength + GredBlockWiseUpperReductionLen - 1) /
+                    GredBlockWiseUpperReductionLen;
+
+                if(expBlocksPerReduction > GredUpperNumBlocksPerReduction)
+                    return (invariantLength * GredUpperNumBlocksPerReduction);
+                else
+                    return (invariantLength * expBlocksPerReduction);
+            };
+        };
+    };
+
+    ReductionMethod_t getReductionMethod(std::size_t invariantLength,
+                                         std::size_t toReduceLength) const
+    {
+        assert(invariantLength > 0 && toReduceLength > 1);
+
+        if(invariantLength == 1)
+        {
+            if(toReduceLength <=
+               GredBlockWiseUpperReductionLen) // let one block to do this only reduction
+                return (ReductionMethod_t::BlockWise);
+            else // let multiple blocks to do this only reduction
+                return (ReductionMethod_t::MultiBlock);
+        }
+        else
+        {
+            if(toReduceLength <=
+               GredDirectThreadWiseUpperReductionLen) // let one thread to do each reduction
+                return (ReductionMethod_t::DirectThreadWise);
+            else if(toReduceLength <=
+                    GredDirectWarpWiseUpperReductionLen) // let one warp to do each reduction
+                return (ReductionMethod_t::DirectWarpWise);
+            else if(toReduceLength <=
+                    GredBlockWiseUpperReductionLen) // let one block to do each reduction
+                return (ReductionMethod_t::BlockWise);
+            else
+                return (ReductionMethod_t::MultiBlock); // let multiple blocks to do each reduction
+        };
+    };
+
+    std::size_t getWorkspaceSize(std::size_t invariantLength, std::size_t toReduceLength) const
+    {
+        assert(invariantLength > 0 && toReduceLength > 1);
+
+        if(getReductionMethod(invariantLength, toReduceLength) == ReductionMethod_t::MultiBlock)
+        {
+            auto gridSize = getGridSize(invariantLength, toReduceLength);
+
+            return (gridSize);
+        };
+
+        return (0);
+    };
+
+    std::size_t getGridSize_2(std::size_t invariantLength, std::size_t toReduceLength) const
+    {
+        if(toReduceLength <= warpSize_ / 4) // let one thread to do each reduction
+            return ((invariantLength + blockSize_ - 1) / blockSize_);
+        else if(toReduceLength <= blockSize_) // let one warp to do each reduction
+            return ((invariantLength + numWarpsPerBlock - 1) / numWarpsPerBlock);
+        else
+            return (invariantLength); // let one block to do each reduction
+    };
+
+    ReductionMethod_t GetReductionMethod_2(std::size_t invariantLength, std::size_t toReduceLength) const
+    {
+        if(toReduceLength <= warpSize_ / 4) // let one thread to do each reduction
+            return (ReductionMethod_t::DirectThreadWise);
+        else if(toReduceLength <= blockSize_) // let one warp to do each reduction
+            return (ReductionMethod_t::DirectWarpWise);
+        else
+            return (ReductionMethod_t::BlockWise);
+    };
+};
+
+static inline int GetDataTypeId(appDataType_t t)
+{
+    switch(t)
+    {
+    case appHalf: return (static_cast<int>('H'));
+    case appFloat: return (static_cast<int>('F'));
+    case appBFloat16: return (static_cast<int>('B'));
+    case appDouble: return (static_cast<int>('D'));
+    case appInt8:
+    case appInt8x4:
+    case appInt32: return (static_cast<int>('O'));
+    default: 
+	 throw std::runtime_error("Only float, half, bfloat16 data type is supported."); 
+	 break;
+    };
+};
+
+static inline int GetReduceTensorOpId(ReduceTensorOp_t t)
+{
+    switch(t)
+    {
+    case REDUCE_TENSOR_ADD:
+        return (656868); // 'A' * 10000 + 'D' * 100 + 'D'
+    case REDUCE_TENSOR_MUL:
+        return (778576); // 'M' * 10000 + 'U' * 100 + 'L'
+    case REDUCE_TENSOR_MIN:
+        return (777378); // 'M' * 10000 + 'I' * 100 + 'N'
+    case REDUCE_TENSOR_MAX:
+        return (776588); // 'M' * 10000 + 'A' * 100 + 'X'
+    case REDUCE_TENSOR_AMAX:
+        return (657788); // 'A' * 10000 + 'M' * 100 + 'X'
+    case REDUCE_TENSOR_AVG:
+        return (658671); // 'A' * 10000 + 'V' * 100 + 'G'
+    case REDUCE_TENSOR_NORM1:
+        return (788201); // 'N' * 10000 + 'R' * 100 + '1'
+    case REDUCE_TENSOR_NORM2:
+        return (788202); // 'N' * 10000 + 'R' * 100 + '2'
+    default:
+        throw std::runtime_error("Operation is not supported"); 
+ 	break;
+    };
+};
+
+} // namespace detail_dyn_generic_reduction
 
 template <typename TSrc,
           typename TComp,
-          typename TDst,
-          typename InLengths,
-          typename WeiLengths,
-          typename OutLengths,
-          typename ConvStrides,
-          typename ConvDilations,
-          typename InLeftPads,
-          typename InRightPads>
-void device_dynamic_convolution_forward_implicit_gemm_v4r4_nchw_kcyx_nkhw_olc(
+          typename TDst>
+void device_dynamic_generic_reduction_olc(
     olCompile::Handle* handle,
-    const InLengths& in_n_c_hi_wi_lengths,
-    const WeiLengths& wei_k_c_y_x_lengths,
-    const OutLengths& out_n_k_ho_wo_lengths,
-    const ConvStrides& conv_strides,
-    const ConvDilations& conv_dilations,
-    const InLeftPads& in_left_pads,
-    const InRightPads& in_right_pads,
-    const Tensor<TInWei>& in_n_c_hi_wi,
-    const Tensor<TInWei>& wei_k_c_y_x,
-    Tensor<TOut>& out_n_k_ho_wo,
-    const tunable_dyn_conv_fwd_v4r4_nchw_kcyx_nkhw* tunable,
+    const std::vector<int> invariantDims,
+    const std::vector<int> toReduceDims,
+    const Tensor<TSrc>& in,
+    Tensor<TDst>& out,
+    ReduceTensorOp_t reduceOp, 
+    NanPropagation_t nanPropaOpt,
+    ReduceTensorIndices_t reduceIndicesOpt, 
+    float alpha, 
+    float beta,
+    const tunable_dyn_generic_reduction* tunable,
     ck::index_t nrepeat)
 {
     using namespace ck;
-    using namespace detail_dyn_conv_fwd_v4r4_nchw_kcyx_nkhw;
+    using namespace detail_dyn_generic_reduction;
     using size_t = std::size_t;
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // The follow codes are only used for computing the grid_size, hasMainKBlockLoop,
-    // hasDoubleTailKBlockLoop
 
-    constexpr auto I0 = Number<0>{};
-    constexpr auto I1 = Number<1>{};
-    constexpr auto I2 = Number<2>{};
-    constexpr auto I3 = Number<3>{};
+    size_t invariantLength = out.mDesc.GetElementSize();
+    size_t toReduceLength = in.mDesc.GetElementSize() / invariantLength;
+    auto origReduceLen = toReduceLength;
 
-    const auto in_n_c_hi_wi_desc =
-        make_dynamic_naive_tensor_descriptor_packed_v2(in_n_c_hi_wi_lengths);
-    const auto wei_k_c_y_x_desc =
-        make_dynamic_naive_tensor_descriptor_packed_v2(wei_k_c_y_x_lengths);
-    const auto out_n_k_ho_wo_desc =
-        make_dynamic_naive_tensor_descriptor_packed_v2(out_n_k_ho_wo_lengths);
-
-    const auto descs =
-        transform_forward_convolution_into_gemm_v4r4_nchw_kcyx_nkhw_pad(wei_k_c_y_x_desc,
-                                                                        in_n_c_hi_wi_desc,
-                                                                        out_n_k_ho_wo_desc,
-                                                                        conv_strides,
-                                                                        conv_dilations,
-                                                                        in_left_pads,
-                                                                        in_right_pads);
-    const auto a_k_m_grid_desc = descs[I0];
-    const auto c_m_n_grid_desc = descs[I2];
-    const auto M               = c_m_n_grid_desc.GetLength(I0);
-    const auto N               = c_m_n_grid_desc.GetLength(I1);
-    const auto K               = a_k_m_grid_desc.GetLength(I0);
-
-    const index_t grid_size            = (M / tunable->MPerBlock) * (N / tunable->NPerBlock);
-    const bool hasMainKBlockLoop       = ((K + tunable->KPerBlock) / (2 * tunable->KPerBlock) > 1);
-    const bool hasDoubleTailKBlockLoop = ((K / tunable->KPerBlock) % 2 == 0);
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ReductionKernelConfigurator configurator(tunable->BlockSize, handle->GetWavefrontWidth());
 
     // these buffers are usually provided by the user application
-    DeviceMem in_n_c_hi_wi_dev_buf(sizeof(TInWei) * in_n_c_hi_wi.mDesc.GetElementSpace());
-    DeviceMem wei_k_c_y_x_dev_buf(sizeof(TInWei) * wei_k_c_y_x.mDesc.GetElementSpace());
-    DeviceMem out_n_k_ho_wo_dev_buf(sizeof(TOut) * out_n_k_ho_wo.mDesc.GetElementSpace());
+    DeviceMem in_dev_buf(sizeof(TSrc) * in.mDesc.GetElementSpace());
+    DeviceMem out_dev_buf(sizeof(TDst) * out.mDesc.GetElementSpace());
 
-    in_n_c_hi_wi_dev_buf.ToDevice(in_n_c_hi_wi.mData.data());
-    wei_k_c_y_x_dev_buf.ToDevice(wei_k_c_y_x.mData.data());
-    out_n_k_ho_wo_dev_buf.ToDevice(out_n_k_ho_wo.mData.data());
+    in_dev_buf.ToDevice(in.mData.data()); 
+    out_dev_buf.ToDevice(out.mData.data());
 
-    // these are workspace buffers that should be expressed to the user by the corresponding
-    // workspace API
-    DeviceMem workspace_buf(4096);
+    auto inLengths = in.mDesc.GetLengths(); 
+    auto inStrides = in.mDesc.GetStrides(); 
+    auto outLengths = out.mDesc.GetLengths(); 
+    auto outStrides = out.mDesc.GetStrides(); 
 
-    void* a_k_m0_m1_grid_desc_dev_buf = workspace_buf.GetDeviceBuffer();
-    void* b_k_n0_n1_grid_desc_dev_buf =
-        static_cast<void*>(static_cast<unsigned char*>(workspace_buf.GetDeviceBuffer()) + 1024);
-    void* c_m0_m10_m11_n0_n10_n11_grid_desc_dev_buf =
-        static_cast<void*>(static_cast<unsigned char*>(workspace_buf.GetDeviceBuffer()) + 2048);
-    void* c_blockid_to_m0_n0_block_cluster_adaptor_dev_buf =
-        static_cast<void*>(static_cast<unsigned char*>(workspace_buf.GetDeviceBuffer()) + 3072);
+    std::vector<size_t> lens_buf(4096/sizeof(size_t));   // allocate one page  
+
+    for (int i=0; i < inLengths.size(); i++) 
+         lens_buf[0+i] = inLengths[i]; 
+
+    for (int i=0; i < inStrides.size(); i++) 
+         lens_buf[6+i] = inStrides[i]; 
+
+    for (int i=0; i < outLengths.size(); i++) 
+         lens_buf[12+i] = outLengths[i]; 
+
+    for (int i=0; i < outStrides.size(); i++)
+	 lens_buf[18+i] = outStrides[i]; 
+
+    auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
+
+    bool need_indices = (reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES) &&
+        (reduceOp == REDUCE_TENSOR_MIN || reduceOp == REDUCE_TENSOR_MAX || reduceOp == REDUCE_TENSOR_AMAX);
+
+    size_t wsSizeInBytes = 
+        !need_indices ? workspace_size * sizeof(TSrc) 
+                      : workspace_size * (sizeof(TSrc) + sizeof(int)) + 64 + sizeof(int);
+
+    DeviceMem workspace1(wsSizeInBytes); 
+    DeviceMem workspace2(4096); 
+
+    void *p_dev_src2dDesc = (char *)workspace2.GetDeviceBuffer() + 1024; 
+    void *p_dev_dst1dDesc = (char *)workspace2.GetDeviceBuffer() + 2048;
+    bool *p_dev_src_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3172 ); 
+    bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3172 + sizeof(int) ); 
+    size_t *p_dev_inLengths = (size_t*)workspace2.GetDeviceBuffer(); 
+    size_t *p_dev_inStrides = &p_dev_inLengths[6]; 
+    size_t *p_dev_outLengths = &p_dev_inLengths[12]; 
+    size_t *p_dev_outStrides = &p_dev_inLengths[18]; 
+
+    workspace2.ToDevice(static_cast<const void*>(lens_buf.data()));  
+
+    size_t indicesSizeInBytes = need_indices? out.mDesc.GetElementSize() * sizeof(int) : 0; 
+
+    DeviceMem indices_dev_buf(indicesSizeInBytes);
+
+    size_t ws_buf2_bytes_offset; 
+
+    if(need_indices && workspace_size > 0)
+    {
+        long byteOffset =
+            static_cast<long>((wsSizeInBytes / (sizeof(TSrc) + sizeof(int))) * sizeof(TSrc));
+
+        ws_buf2_bytes_offset = ((byteOffset + 63) / 64) * 64;
+    };
+
+
+    ReductionMethod_t reduceImpl = configurator.getReductionMethod(invariantLength, toReduceLength);
+    auto gridSize                = configurator.getGridSize(invariantLength, toReduceLength);
+    size_t blkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? gridSize / invariantLength : 0;    
 
     const std::vector<size_t> vld  = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
-    const std::vector<size_t> vgd2 = {static_cast<size_t>(grid_size * tunable->BlockSize), 1, 1};
+    const std::vector<size_t> vgd2 = {static_cast<size_t>(gridSize * tunable->BlockSize), 1, 1};
 
-    std::string program_name = "dynamic_convolution_forward_implicit_gemm_v4r4_nchw_kcyx_nkhw.cpp";
-    std::string algo_name    = "implicit_gemm_conv_fwd_v4r4_nchw";
+    std::string program_name = "dynamic_gridwise_generic_reduction.cpp";
+    std::string algo_name    = "dynamic_generic_reduction";
 
     std::string param = " -std=c++17 ";
     std::string network_config;
 
-    param += get_definition_string_from_types<TInWei, TAcc, TOut>() + " " +
-             get_definition_string_from_tunable(tunable) +
-             " -DCK_PARAM_HAS_MAIN_KBLOCK_LOOP=" + std::to_string(hasMainKBlockLoop) +
-             " -DCK_PARAM_HAS_DOUBLE_TAIL_KBLOCK_LOOP=" + std::to_string(hasDoubleTailKBlockLoop);
-    network_config = get_network_config_string_from_types<TInWei, TAcc, TOut>() + "_" +
-                     get_network_config_string_from_tunable(tunable) + "_" +
-                     std::to_string(hasMainKBlockLoop) + "_" +
-                     std::to_string(hasDoubleTailKBlockLoop);
+    param += get_definition_string_from_types<TSrc, TComp, TDst>() + " " + get_definition_string_from_tunable(tunable);
+
+    param += " -DCK_PARAM_TOREDUCE_DIMS=";
+    for(int i = 0; i < toReduceDims.size(); i++)
+    {
+        param += std::to_string(toReduceDims[i]);
+        if(i < toReduceDims.size() - 1)
+            param += ",";
+    };
+
+    if(!invariantDims.empty())
+    {
+        param += " -DCK_PARAM_INVARIANT_DIMS=";
+        for(int i = 0; i < invariantDims.size(); i++)
+        {
+            param += std::to_string(invariantDims[i]);
+            if(i < invariantDims.size() - 1)
+                param += ",";
+        };
+    }
+    else
+        param += " -DCK_PARAM_INVARIANT_DIMS= ";
+
+    param += " -DCK_PARAM_REDUCE_OP=" + std::to_string(GetReduceTensorOpId(reduceOp));
+    param += " -DCK_PARAM_NAN_PROPAGATE=" + std::to_string(nanPropaOpt == PROPAGATE_NAN ? 1 : 0);
+    param += " -DCK_PARAM_REDUCE_INDICES=" + std::to_string(reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES ? 1 : 0);
+	     
+    network_config = get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" + get_network_config_string_from_tunable(tunable) + "_"; 
+
+    for(auto dimLen : inLengths)
+        network_config += std::to_string(dimLen) + "_";
+
+    for(auto dimStride : inStrides)
+        network_config += std::to_string(dimStride) + "_"; 
+
+    network_config += "RED";
+    for(auto dim : toReduceDims)
+        network_config += std::to_string(dim) + "_";
+    network_config += "BSIZE_" + std::to_string(tunable->BlockSize);
 
     std::vector<float> kernel1_times;
     std::vector<float> kernel2_times;
+    std::vector<float> kernel3_times;
+    std::vector<float> kernel4_times;
 
     for(index_t i = 0; i < nrepeat; ++i)
     {
         KernelTimer timer1, timer2;
         std::string kernel_name;
 
-        kernel_name = "dynamic_convolution_forward_implicit_gemm_v4r4_nchw_kcyx_nkhw_prepare";
+        kernel_name = "gridwise_generic_reduce_1_prepare";
         auto network_config_1 = network_config + "_1";
 
         timer1.Start();
-        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(
-            static_cast<index_t>(in_n_c_hi_wi_lengths[I0]),
-            static_cast<index_t>(in_n_c_hi_wi_lengths[I1]),
-            static_cast<index_t>(in_n_c_hi_wi_lengths[I2]),
-            static_cast<index_t>(in_n_c_hi_wi_lengths[I3]),
-            static_cast<index_t>(wei_k_c_y_x_lengths[I0]),
-            static_cast<index_t>(wei_k_c_y_x_lengths[I2]),
-            static_cast<index_t>(wei_k_c_y_x_lengths[I3]),
-            conv_strides[I0],
-            conv_strides[I1],
-            conv_dilations[I0],
-            conv_dilations[I1],
-            in_left_pads[I0],
-            in_left_pads[I1],
-            in_right_pads[I0],
-            in_right_pads[I1],
-            a_k_m0_m1_grid_desc_dev_buf,
-            b_k_n0_n1_grid_desc_dev_buf,
-            c_m0_m10_m11_n0_n10_n11_grid_desc_dev_buf,
-            c_blockid_to_m0_n0_block_cluster_adaptor_dev_buf);
+        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), gridSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
+			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
 
-        kernel_name           = "dynamic_convolution_forward_implicit_gemm_v4r4_nchw_kcyx_nkhw";
+        kernel_name           = "gridwise_generic_reduce_1";
         auto network_config_2 = network_config + "_2";
 
         timer2.Start();
-        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(
-            reinterpret_cast<const TInWei*>(wei_k_c_y_x_dev_buf.GetDeviceBuffer()),
-            reinterpret_cast<const TInWei*>(in_n_c_hi_wi_dev_buf.GetDeviceBuffer()),
-            reinterpret_cast<TOut*>(out_n_k_ho_wo_dev_buf.GetDeviceBuffer()),
-            (const void*)(a_k_m0_m1_grid_desc_dev_buf),
-            (const void*)(b_k_n0_n1_grid_desc_dev_buf),
-            (const void*)(c_m0_m10_m11_n0_n10_n11_grid_desc_dev_buf),
-            (const void*)(c_blockid_to_m0_n0_block_cluster_adaptor_dev_buf));
+        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
+		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
         timer2.End();
 
         kernel1_times.push_back(timer1.GetElapsedTime());
         kernel2_times.push_back(timer2.GetElapsedTime());
+
+        if (reduceImpl == ReductionMethod_t::MultiBlock) {
+            auto toReduceLength_2 = blkGroupSize;
+            auto gridSize_2       = configurator.getGridSize_2(invariantLength, toReduceLength_2);
+            const std::vector<size_t> vgd2_2 = {gridSize_2 * tunable->BlockSize, size_t{1}, size_t{1}};
+            auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2); 
+
+            kernel_name = "gridwise_generic_reduce_2_prepare";
+            network_config_1 = network_config + "_1";
+
+            timer1.Start(); 
+            handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl2), gridSize_2, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
+                                                                                                                  p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding);
+	    timer1.End(); 
+
+            kernel_name = "gridwise_generic_reduce_2";
+            network_config_2 = network_config + "_2";
+
+            timer2.Start(); 
+            handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2_2, param)(static_cast<int>(reduceImpl2), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
+		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
+	    timer1.End(); 
+
+            kernel3_times.push_back(timer1.GetElapsedTime());
+            kernel4_times.push_back(timer2.GetElapsedTime());
+	}; 
     }
 
     {
         auto ave_time1 = Driver::get_effective_average(kernel1_times);
         auto ave_time2 = Driver::get_effective_average(kernel2_times);
 
-        const auto N = in_n_c_hi_wi_lengths[I0];
-        const auto C = in_n_c_hi_wi_lengths[I1];
+        if ( reduceImpl == ReductionMethod_t::MultiBlock ) {
+             auto ave_time3 = Driver::get_effective_average(kernel3_times);
+             auto ave_time4 = Driver::get_effective_average(kernel4_times);
 
-        const auto K  = out_n_k_ho_wo_lengths[I1];
-        const auto Ho = out_n_k_ho_wo_lengths[I2];
-        const auto Wo = out_n_k_ho_wo_lengths[I3];
-
-        const auto Y = wei_k_c_y_x_lengths[I2];
-        const auto X = wei_k_c_y_x_lengths[I3];
-
-        float perf = (float)(std::size_t(2) * N * K * Ho * Wo * C * Y * X) /
-                     (std::size_t(1000) * 1000 * 1000) / (ave_time1 + ave_time2);
-
-        std::cout << "Average time : " << ave_time1 + ave_time2 << " ms(" << ave_time1 << ", "
-                  << ave_time2 << "), " << perf << " TFlop/s" << std::endl;
+             std::cout << "Average time : " << ave_time1 + ave_time2 + ave_time3 + ave_time3 << " ms(" << ave_time1+ave_time3 << ", " << ave_time2+ave_time4 << ")" << std::endl;
+        }
+	else {
+             std::cout << "Average time : " << ave_time1 + ave_time2 << " ms(" << ave_time1 << ", " << ave_time2 << ")" << std::endl;
+        }; 
     };
 
     // copy result back to host
-    out_n_k_ho_wo_dev_buf.FromDevice(out_n_k_ho_wo.mData.data());
+    out_dev_buf.FromDevice(out.mData.data());
 }

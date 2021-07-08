@@ -62,7 +62,7 @@ static inline bool float_equal_zero(half_float::half x)
 };
 
 template <typename compType>
-static inline std::function<void(compType&)> PreUnaryOpFn(miopenReduceTensorOp_t op_, std::size_t)
+static inline std::function<void(compType&)> PreUnaryOpFn(ReduceTensorOp_t op_, std::size_t)
 {
     using std::abs;
 
@@ -77,14 +77,15 @@ static inline std::function<void(compType&)> PreUnaryOpFn(miopenReduceTensorOp_t
     case REDUCE_TENSOR_MUL:
     case REDUCE_TENSOR_MIN:
     case REDUCE_TENSOR_MAX: return ([&](compType&) {});
-    }
 
+    default:
     throw std::runtime_error(std::string(__FUNCTION__) +
                              ": using undefined Reduction operation is not permitted");
+    }; 
 };
 
 template <typename compType>
-static inline std::function<void(compType&)> PosUnaryOpFn(miopenReduceTensorOp_t op_,
+static inline std::function<void(compType&)> PosUnaryOpFn(ReduceTensorOp_t op_,
                                                           std::size_t divider)
 {
     using std::sqrt;
@@ -111,7 +112,7 @@ static inline std::function<void(compType&)> PosUnaryOpFn(miopenReduceTensorOp_t
 };
 
 template <typename compType>
-static inline std::function<void(compType&, compType)> ReduceOpFn(miopenReduceTensorOp_t op_)
+static inline std::function<void(compType&, compType)> ReduceOpFn(ReduceTensorOp_t op_)
 {
     switch(op_)
     {
@@ -142,7 +143,7 @@ static inline std::function<void(compType&, compType)> ReduceOpFn(miopenReduceTe
 
 template <typename compType>
 static inline std::function<void(compType&, compType, bool& changed)>
-ReduceOpFn2(miopenReduceTensorOp_t op_)
+ReduceOpFn2(ReduceTensorOp_t op_)
 {
     switch(op_)
     {
@@ -181,7 +182,7 @@ ReduceOpFn2(miopenReduceTensorOp_t op_)
 };
 
 template <typename compType>
-static inline compType ReduceOpZeroVal(miopenReduceTensorOp_t op_)
+static inline compType ReduceOpZeroVal(ReduceTensorOp_t op_)
 {
     switch(op_)
     {
@@ -203,7 +204,7 @@ static inline compType ReduceOpZeroVal(miopenReduceTensorOp_t op_)
 };
 
 template <>
-inline half_float::half ReduceOpZeroVal<half_float::half>(miopenReduceTensorOp_t op_)
+inline half_float::half ReduceOpZeroVal<half_float::half>(ReduceTensorOp_t op_)
 {
     switch(op_)
     {
@@ -227,7 +228,7 @@ inline half_float::half ReduceOpZeroVal<half_float::half>(miopenReduceTensorOp_t
 };
 
 template <typename compType>
-static inline void binop_with_nan_check(miopenNanPropagation_t nanOpt,
+static inline void binop_with_nan_check(NanPropagation_t nanOpt,
                                         std::function<void(compType&, compType)> opReduce,
                                         compType& accuVal,
                                         compType currVal)
@@ -246,7 +247,7 @@ static inline void binop_with_nan_check(miopenNanPropagation_t nanOpt,
 };
 
 template <typename compType>
-static inline void binop_with_nan_check2(miopenNanPropagation_t nanOpt,
+static inline void binop_with_nan_check2(NanPropagation_t nanOpt,
                                          std::function<void(compType&, compType, bool&)> opReduce,
                                          compType& accuVal,
                                          compType currVal,
@@ -325,38 +326,38 @@ get_all_indexes(const std::vector<T>& dimLengths, int dim, std::vector<std::vect
     };
 };
 
-template <typename T>
-static T get_offset_from_index(const std::vector<T>& strides, const std::vector<T>& index)
+template <typename T1, typename T2>
+static T1 get_offset_from_index(const std::vector<T1>& strides, const std::vector<T2>& index)
 {
-    T offset = 0;
+    T1 offset = 0;
 
     assert(strides.size() == index.size());
 
     for(int i = 0; i < index.size(); i++)
-        offset += strides[i] * index[i];
+        offset += strides[i] * static_cast<T1>(index[i]);
 
     return (offset);
 };
 
-template <typename T>
-static T get_flatten_offset(const std::vector<T>& lengths, const std::vector<T>& index)
+template <typename T1, typename T2>
+static T1 get_flatten_offset(const std::vector<T1>& lengths, const std::vector<T2>& index)
 {
-    T offset = 0;
+    T1 offset = 0;
 
     assert(lengths.size() == index.size() && lengths.size() > 0);
 
     int len  = lengths.size();
-    T stride = 1;
+    T1 stride = 1;
 
     // for len==1, the loop is not executed
     for(int i = len - 1; i > 0; i--)
     {
-        offset += stride * index[i];
+        offset += stride * static_cast<T2>(index[i]);
 
         stride *= lengths[i];
     };
 
-    offset += stride * index[0];
+    offset += stride * static_cast<T1>(index[0]);
 
     return (offset);
 };

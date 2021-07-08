@@ -1,3 +1,4 @@
+
 /*******************************************************************************
  *
  * MIT License
@@ -23,8 +24,8 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef GUARD_MIOPEN_REDUCTION_HOST_HPP_
-#define GUARD_MIOPEN_REDUCTION_HOST_HPP_
+#ifndef HOST_GENERIC_REDUCTION_HPP_
+#define HOST_GENERIC_REDUCTION_HPP_
 
 #include <vector>
 #include <functional>
@@ -33,7 +34,7 @@
 #include <cassert>
 #include <cmath>
 
-#include "olc_reduction_common.hpp"
+#include "olc_reduce_common.hpp"
 #include "host_reduce_util.hpp"
 
 using float16 = half_float::half;
@@ -43,9 +44,9 @@ class ReductionHost
 {
     public:
     ReductionHost() = default;
-    ReductionHost(const ReductionOp_t reduceOp_, appDataType_t compTypeVal_, NanPropagation_t nanOpt_, ReduceTensorIndices_t indicesOpt_, IndicesType_t indicesType_,  
-                        HostTensorDescriptor & in,
-                        HostTensorDescriptor & out,
+    ReductionHost(const ReduceTensorOp_t reduceOp_, appDataType_t compTypeVal_, NanPropagation_t nanOpt_, ReduceTensorIndices_t indiceOpt_,   
+                        HostTensorDescriptor & inDesc,
+                        HostTensorDescriptor & outDesc,
                         const std::vector<int>& invariantDims_,
                         const std::vector<int>& toReduceDims_)
     {
@@ -53,12 +54,11 @@ class ReductionHost
 	this->compTypeVal = compTypeVal_;
 	this->nanOpt = nanOpt_; 
 	this->indiceOpt = indiceOpt_;
-	this->indiceType = indiceType_; 
 
-        this->inLengths  = in.mDesc.GetLengths();
-        this->outLengths = out.mDesc.GetLengths();
-        this->inStrides  = in.mDesc.GetStrides();
-        this->outStrides = out.mDesc.GetStrides();
+        this->inLengths  = inDesc.GetLengths();
+        this->outLengths = outDesc.GetLengths();
+        this->inStrides  = inDesc.GetStrides();
+        this->outStrides = outDesc.GetStrides();
 
         this->invariantDims = invariantDims_;
         this->toReduceDims  = toReduceDims_;
@@ -103,7 +103,7 @@ class ReductionHost
     appDataType_t compTypeVal;
    
     NanPropagation_t nanOpt;
-    ReduceTensorIndices_t indicesOpt;
+    ReduceTensorIndices_t indiceOpt;
     IndicesType_t indicesType;
 
     std::vector<size_t> inLengths;
@@ -122,10 +122,8 @@ class ReductionHost
     template <typename compType>
     void RunImpl(float alpha, const TSrc* in_data, float beta, TDst* out_data, int* indices)
     {
-        bool need_indices =
-            (indicesOpt == MIOPEN_REDUCE_TENSOR_FLATTENED_INDICES) &&
-            (reduceOp == MIOPEN_REDUCE_TENSOR_MIN || reduceOp == MIOPEN_REDUCE_TENSOR_MAX ||
-             reduceOp == MIOPEN_REDUCE_TENSOR_AMAX);
+        bool need_indices = (indiceOpt == REDUCE_TENSOR_FLATTENED_INDICES) &&
+            (reduceOp == REDUCE_TENSOR_MIN || reduceOp == REDUCE_TENSOR_MAX || reduceOp == REDUCE_TENSOR_AMAX);
 
         if(need_indices)
             RunImpl_with_indices<compType>(alpha, in_data, beta, out_data, indices);
@@ -158,7 +156,7 @@ class ReductionHost
 
         if(reduceAllDims)
         {
-            std::vector<std::vector<int>> indexes_1;
+            std::vector<std::vector<size_t>> indexes_1;
 
             get_all_indexes(inLengths, 0, indexes_1); // generate the input indexes space
 
@@ -194,7 +192,7 @@ class ReductionHost
         }
         else
         {
-            std::vector<std::vector<int>> indexes_1, indexes_2;
+            std::vector<std::vector<size_t>> indexes_1, indexes_2;
 
             get_all_indexes(
                 this->invariantLengths, 0, indexes_1); // generate the invariant indexes space
@@ -283,7 +281,7 @@ class ReductionHost
 
         if(reduceAllDims)
         {
-            std::vector<std::vector<int>> indexes_1;
+            std::vector<std::vector<size_t>> indexes_1;
 
             get_all_indexes(inLengths, 0, indexes_1); // generate the input indexes space
 
@@ -316,7 +314,7 @@ class ReductionHost
         }
         else
         {
-            std::vector<std::vector<int>> indexes_1, indexes_2;
+            std::vector<std::vector<size_t>> indexes_1, indexes_2;
 
             get_all_indexes(
                 this->invariantLengths, 0, indexes_1); // generate the invariant indexes space
