@@ -31,7 +31,7 @@
 #include "dynamic_reduction_functions.hpp"
 #include "reduction_common.hpp"
 
-#include "threadwise_dynamic_generic_tensor_slice_transfer.hpp"
+#include "threadwise_dynamic_tensor_slice_transfer.hpp"
 
 namespace ck {
 

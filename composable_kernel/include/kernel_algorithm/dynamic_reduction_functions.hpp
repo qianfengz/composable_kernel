@@ -55,7 +55,7 @@ struct binop_with_nan_check<NanPropagation_t::NOT_PROPAGATE_NAN, opReduce, compT
                                             int& accuIndex,
                                             int currIndex)
     {
-        VOLATILE_WA_274384 bool changed = false;
+        bool changed = false;
 
         opReduce{}(const_cast<compType&>(accuVal), currVal, changed);
 
@@ -77,7 +77,7 @@ struct binop_with_nan_check<NanPropagation_t::PROPAGATE_NAN, opReduce, compType>
 
     // The method is called when the opReduce is indexable and the user asked for indices
     __device__ static inline void
-    calculate(compType& accuVal, compType currVal, VOLATILE_WA_274384 int& accuIndex, int currIndex)
+    calculate(compType& accuVal, compType currVal, int& accuIndex, int currIndex)
     {
         if(isnan(currVal))
         {
@@ -86,7 +86,7 @@ struct binop_with_nan_check<NanPropagation_t::PROPAGATE_NAN, opReduce, compType>
         }
         else
         {
-            VOLATILE_WA_274384 bool changed = false;
+            bool changed = false;
 
             opReduce{}(accuVal, currVal, changed);
 

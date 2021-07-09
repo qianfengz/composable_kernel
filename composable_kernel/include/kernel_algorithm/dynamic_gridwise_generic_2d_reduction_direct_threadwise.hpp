@@ -31,7 +31,7 @@
 #include "dynamic_reduction_functions.hpp"
 #include "reduction_common.hpp"
 
-#include "threadwise_dynamic_generic_tensor_slice_transfer.hpp"
+#include "threadwise_dynamic_tensor_slice_transfer.hpp"
 
 namespace ck {
 
@@ -74,7 +74,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         }).Else([&](auto) { RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global); });
     };
 
-    __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen
+    __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen,
 		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
@@ -88,7 +88,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
         auto zeroVal       = opReduce::GetZeroVal();
 
-        accuValue_buffer[0] = zeroVal; 
+        accuValue_buf[0] = zeroVal; 
 
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
         const int divider = origReduceLen;
@@ -158,7 +158,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
             threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, priorDstValue_buf, type_convert<dstDataType>{}(zeroVal));
 
-            accuValue_buffer[0] += type_convert<compType>{}(priorDstValue_buf[0] * beta);
+            accuValue_buf[0] += type_convert<compType>{}(priorDstValue_buf[0] * beta);
         }
 
         auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<

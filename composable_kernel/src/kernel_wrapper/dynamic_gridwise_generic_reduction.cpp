@@ -3,7 +3,7 @@
 #include "sequence.hpp"
 #include "tensor_descriptor_helper.hpp"
 #include "reduction_common.hpp"
-#include "gridwise_generic_reduction.hpp"
+#include "dynamic_gridwise_generic_reduction.hpp"
 
 using namespace ck;
 
@@ -90,8 +90,6 @@ using dstDataType = typename get_type_from_type_id<static_cast<char>(CK_PARAM_DS
 using compType = typename get_type_from_type_id<static_cast<char>(CK_PARAM_REDUCE_COMPTYPE)>::type;
 
 constexpr index_t blockSize = CK_PARAM_BLOCKSIZE; // tunable
-constexpr index_t blkGroupSize =
-    CK_PARAM_BLKGROUPSIZE; // determined by the problem and the selected BlockSize
 
 constexpr index_t srcDims = CK_PARAM_IN_DIMS; 
 constexpr index_t dstDims = CK_PARAM_OUT_DIMS; 
@@ -157,7 +155,7 @@ static constexpr auto make_passthrough_tuple_from_seq(Sequence<Is...>)
 };
 
 template <typename src2dDescType, typename dst1dDescType>
-static inline void gridwise_generic_reduce_pad_and_store(ReductionMethod_t reduceImpl, size_t GridSize, src2dDescType &src2dDesc, dst1dDescType &dst1dDesc,
+static inline void gridwise_generic_reduce_pad_and_store(ReductionMethod_t reduceImpl, size_t GridSize, int BlkGroupSize, src2dDescType &src2dDesc, dst1dDescType &dst1dDesc,
 	                                                 void *p_src2dDesc, void *p_dst1dDesc, bool *p_src_use_padding, bool *p_dst_use_padding)
 {
      const auto invariantLen = src2dDesc.GetLength(Number<0>{}); 
@@ -458,7 +456,7 @@ struct get_ref_desc_types<false, index_dstDims, typename invariantDims, typename
       using refType_dst1dDesc = decltype( ref_dst1dDesc );
 };
 
-extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origReduceLen, const void __CONSTANT__ *p_src2dDesc, const void __CONSTANT__ *p_dst1dDesc,
+extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origReduceLen, int BlkGroupSize, const void __CONSTANT__ *p_src2dDesc, const void __CONSTANT__ *p_dst1dDesc,
 	                                             const bool *p_src_use_padding, const bool *p_dst_use_padding,
 		                                     float alpha,
                                                      const void* p_src_global,
@@ -497,17 +495,16 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
       const bool src_use_padding = *p_src_use_padding; 
       const bool dst_use_padding = *p_dst_use_padding; 
 
-      const auto gridwise_reduce = Gridwise2dReduction<blkGroupSize,
-                                                         blockSize,
-                                                         srcDataType,
-                                                         dstDataType,
-                                                         compType,
-                                                         static_cast<index_t>(op),
-                                                         static_cast<index_t>(nanPropaOpt),
-                                                         static_cast<index_t>(reduceIndicesOpt),
-                                                         GredThreadBufferLength,
-                                                         GredAccessesPerThreadInBlock,
-                                                         GredAccessesPerThreadInWarp>(origReduceLen);
+      const auto gridwise_reduce = Gridwise2dReduction<blockSize,
+                                                       srcDataType,
+                                                       dstDataType,
+                                                       compType,
+                                                       static_cast<index_t>(op),
+                                                       static_cast<index_t>(nanPropaOpt),
+                                                       static_cast<index_t>(reduceIndicesOpt),
+                                                       GredThreadBufferLength,
+                                                       GredAccessesPerThreadInBlock,
+                                                       GredAccessesPerThreadInWarp>(origReduceLen, BlkGroupSize);
 
       if ( static_cast<ReductionMethod_t>(reduceImpl) == ReductionMethod_t::Direct_ThreadWise || static_cast<ReductionMethod_t>(reduceImpl) == ReductionMethod_t::Direct_WarpWise) {
            if ( src_use_padding && dst_use_padding ) {
@@ -638,8 +635,8 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
                                                      make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
                                                      make_tuple(Sequence<0>{}));
 
-    constexpr index_t ref_invariantLen = ref_one_dim_dstDesc.GetLengths()[0];
-    constexpr index_t ref_toReduceLen  = BlkGroupSize;
+    constexpr index_t ref_invariantLen = ref_dst1dDesc.GetLengths()[0];
+    constexpr index_t ref_toReduceLen  = 8;
 
     constexpr auto ref_src2dDesc = make_dynamic_native_tensor_descriptor_packed_v2(ref_invariantLen, ref_toReduceLen);
 
@@ -668,17 +665,16 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
     const bool src_use_padding = *p_src_use_padding; 
     const bool dst_use_padding = *p_dst_use_padding; 
 
-    const auto gridwise_reduce = Gridwise2dReduction<blkGroupSize,
-                                                       blockSize,
-                                                       srcDataType,
-                                                       dstDataType,
-                                                       compType,
-                                                       static_cast<index_t>(op),
-                                                       static_cast<index_t>(nanPropaOpt),
-                                                       static_cast<index_t>(reduceIndicesOpt),
-                                                       GredThreadBufferLength,
-                                                       GredAccessesPerThreadInBlock,
-                                                       GredAccessesPerThreadInWarp>(origReduceLen);
+    const auto gridwise_reduce = Gridwise2dReduction<blockSize,
+                                                     srcDataType,
+                                                     dstDataType,
+                                                     compType,
+                                                     static_cast<index_t>(op),
+                                                     static_cast<index_t>(nanPropaOpt),
+                                                     static_cast<index_t>(reduceIndicesOpt),
+                                                     GredThreadBufferLength,
+                                                     GredAccessesPerThreadInBlock,
+                                                     GredAccessesPerThreadInWarp>(origReduceLen, BlkGroupSize);
 
     if ( static_cast<ReductionMethod_t>(reduceImpl2) == ReductionMethod_t::Direct_ThreadWise || static_cast<ReductionMethod_t>(reduceImpl2) == ReductionMethod_t::Direct_WarpWise) {
          if ( src_use_padding && dst_use_padding ) {

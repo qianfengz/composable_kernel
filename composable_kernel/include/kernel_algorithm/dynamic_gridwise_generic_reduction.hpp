@@ -35,8 +35,7 @@
 
 namespace ck {
 
-template <index_t BlkGroupSize,
-          index_t BlockSize,
+template <index_t BlockSize,
           typename srcDataType,  // the type with which the data of the source tensor are stored
           typename dstDataType,  // the type with which the data of the destintion tensor are stored
           typename compType,     // the type used by the reduce binary operator
@@ -48,9 +47,10 @@ template <index_t BlkGroupSize,
           index_t GredAccessesPerThreadInWarp>
 struct Gridwise2dReduction
 {
-    Gridwise2dReduction(int _origReduceLen)
+    Gridwise2dReduction(int origReduceLen_, int BlkGroupSize_)
     {
-	origReduceLen = _origReduceLen; 
+	origReduceLen = origReduceLen_; 
+	BlkGroupSize = BlkGroupSize_;
     }; 
 
     // wrapper for switching to the Reduce_DirectThreadWise method
@@ -176,10 +176,9 @@ struct Gridwise2dReduction
                                                                          op,
                                                                          nanPropaOpt,
                                                                          reduceIndicesOpt,
-                                                                         BlkGroupSize,
                                                                          GredAccessesPerThreadInBlock>; 
 
-            gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, 
+            gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, this->BlkGroupSize,
 			          alpha,
                                   p_src_global,
                                   beta,
@@ -253,6 +252,7 @@ struct Gridwise2dReduction
     };
 
     int origReduceLen; 
+    int BlkGroupSize; 
 };
 
 } // namespace ck

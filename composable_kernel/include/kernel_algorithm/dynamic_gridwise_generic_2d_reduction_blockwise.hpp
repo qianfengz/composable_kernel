@@ -31,7 +31,7 @@
 #include "dynamic_reduction_functions.hpp"
 #include "reduction_common.hpp"
 
-#include "blockwise_dynamic_generic_tensor_slice_transfer.hpp"
+#include "blockwise_dynamic_tensor_slice_transfer.hpp"
 #include "ConstantMatrixDescriptor.hpp"
 
 namespace ck {
@@ -353,7 +353,7 @@ struct GridwiseReduction_xy_to_x_blockwise
 
                 threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, priorDstValue_buf, type_convert<dstDataType>{}(zeroVal));
 
-                accuValue_buffer[0] += type_convert<compType>{}(priorDstValue_buf[0] * beta);
+                accuValue_buf[0] += type_convert<compType>{}(priorDstValue_buf[0] * beta);
             }
 
             auto threadwise_dst_val_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<

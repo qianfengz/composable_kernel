@@ -398,7 +398,7 @@ void device_dynamic_generic_reduction_olc(
         auto network_config_2 = network_config + "_2";
 
         timer2.Start();
-        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
+        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, blkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
         timer2.End();
 

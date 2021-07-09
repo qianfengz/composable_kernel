@@ -417,14 +417,14 @@ template <typename T>
 struct reduce_unary_operator<T, ReduceTensorOp_t::NORM2, true, true>
 {
     using preUnaryOp = reduce::unary_square<T, false>;
-    using posUnaryOp = reduce::unary_sqrt<T, false>;
+    using posUnaryOp = reduce::unary_sqrt<T>;
 };
 
 template <typename T>
 struct reduce_unary_operator<T, ReduceTensorOp_t::NORM2, false, true>
 {
     using preUnaryOp = reduce::unary_identic<T, false>;
-    using posUnaryOp = reduce::unary_sqrt<T, false>;
+    using posUnaryOp = reduce::unary_sqrt<T>;
 };
 
 } // end of namespace ck
