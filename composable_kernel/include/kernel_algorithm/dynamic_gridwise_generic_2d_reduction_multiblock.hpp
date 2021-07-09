@@ -106,7 +106,7 @@ struct GridwiseReduction_xy_to_x_multiblock
         constexpr index_t reduceSizePerBlock =
             (((toReduceLength + BlkGroupSize - 1) / BlkGroupSize + BlockBufferSize - 1) / BlockBufferSize) * BlockBufferSize;
 
-        constexpr auto in_block_desc = make_native_tensor_descriptor_packed(Sequence<1, BlockSize * GredAccessesPerThreadInBlock>{});
+        constexpr auto in_block_desc = make_dynamic_naive_tensor_descriptor_packed(make_tuple(1, BlockSize * GredAccessesPerThreadInBlock));
 
         using ThreadSliceLengths   = Sequence<1, GredAccessesPerThreadInBlock>;
         using ThreadClusterLengths = Sequence<1, BlockSize>;
@@ -136,8 +136,7 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                          in_block_desc,
                                                          make_multi_index(0, 0));
 
-        constexpr auto block_buff_2d_desc = make_native_tensor_descriptor_packed(
-            Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
+        constexpr auto block_buff_2d_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(GredAccessesPerThreadInBlock, BlockSize));
 
         using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc),
                                                                     compType,
@@ -168,9 +167,9 @@ struct GridwiseReduction_xy_to_x_multiblock
         }
 
         using ReducedDataLengths       = Sequence<1>;
-        constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
+        constexpr auto ReducedDataDesc = make_naive_tensor_descriptor_packed(ReducedDataLengths{});
 
-        const auto workspace_desc = make_dynamic_native_tensor_descriptor_packed(dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
+        const auto workspace_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize));
 
         // The first thread in the block stores the reduced result to the global location
         // representing the block
@@ -235,7 +234,7 @@ struct GridwiseReduction_xy_to_x_multiblock
         constexpr index_t reduceSizePerBlock =
             (((toReduceLength + BlkGroupSize - 1) / BlkGroupSize + BlockBufferSize - 1) / BlockBufferSize) * BlockBufferSize;
 
-        constexpr auto in_block_desc = make_native_tensor_descriptor_packed(Sequence<1, BlockSize * GredAccessesPerThreadInBlock>{});
+        constexpr auto in_block_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1, BlockSize * GredAccessesPerThreadInBlock));
 
         using ThreadSliceLengths   = Sequence<1, GredAccessesPerThreadInBlock>;
         using ThreadClusterLengths = Sequence<1, BlockSize>;
@@ -265,7 +264,7 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                          in_block_desc,
                                                          make_multi_index(0, 0));
 
-        constexpr auto block_buff_2d_desc = make_native_tensor_descriptor_packed(Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
+        constexpr auto block_buff_2d_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(GredAccessesPerThreadInBlock, BlockSize));
 
         using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc),
                                                                     compType,
@@ -307,9 +306,9 @@ struct GridwiseReduction_xy_to_x_multiblock
         }
 
         using ReducedDataLengths       = Sequence<1>;
-        constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
+        constexpr auto ReducedDataDesc = make_naive_tensor_descriptor_packed(ReducedDataLengths{});
 
-        constexpr auto workspace_desc = make_dynamic_native_tensor_descriptor_packed(dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
+        const auto workspace_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize));
 
         // The first thread in the block stores the reduced result to the global location
         // representing the block

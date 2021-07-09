@@ -97,7 +97,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 	const posUnaryOpType posUnaryOp(divider); 
 
         using ThreadBufferLengths = Sequence<1, GredThreadBufferLength>;
-        constexpr auto ThreadBufferDesc = make_native_tensor_descriptor_packed(ThreadBufferLengths{});
+        constexpr auto ThreadBufferDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1, GredThreadBufferLength));
 
         index_t thread_global_1d_id = get_block_1d_id() * BlockSize + get_thread_local_1d_id();
 
@@ -135,7 +135,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         posUnaryOp(accuValue_buf[0]);
 
         using ReducedDataLengths       = Sequence<1>;
-        constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
+        constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1));
 
         if(!float_equal_one{}(alpha))
             accuValue_buf[0] *= type_convert<compType>{}(alpha);
@@ -203,7 +203,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         const preUnaryOpType preUnaryOp(divider); 
 
         using ThreadBufferLengths = Sequence<1, GredThreadBufferLength>;
-        constexpr auto ThreadBufferDesc = make_native_tensor_descriptor_packed(ThreadBufferLengths{});
+        constexpr auto ThreadBufferDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1, GredThreadBufferLength));
 
         index_t thread_global_1d_id = get_block_1d_id() * BlockSize + get_thread_local_1d_id();
 
@@ -243,7 +243,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         }
 
         using ReducedDataLengths       = Sequence<1>;
-        constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
+        constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1));
 
         if(!float_equal_one{}(alpha))
             accuValue[0] *= type_convert<compType>{}(alpha);
@@ -327,7 +327,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
 
         using ThreadBufferLengths = Sequence<1, GredThreadBufferLength>;
-        constexpr auto ThreadBufferDesc = make_native_tensor_descriptor_packed(ThreadBufferLengths{});
+        constexpr auto ThreadBufferDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1, GredThreadBufferLength));
 
         index_t thread_global_1d_id = get_block_1d_id() * BlockSize + get_thread_local_1d_id();
 
@@ -374,7 +374,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         }
 
         using ReducedDataLengths       = Sequence<1>;
-        constexpr auto ReducedDataDesc = make_native_tensor_descriptor_packed(ReducedDataLengths{});
+        constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(1));
 
         if(!float_equal_one{}(alpha))
             accuValue_buf[0] *= type_convert<compType>{}(alpha);

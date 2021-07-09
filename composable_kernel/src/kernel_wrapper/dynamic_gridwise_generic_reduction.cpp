@@ -1,7 +1,7 @@
 #include "config.hpp"
 #include "number.hpp"
 #include "sequence.hpp"
-#include "tensor_descriptor_helper.hpp"
+#include "dynamic_tensor_descriptor_helper.hpp"
 #include "reduction_common.hpp"
 #include "dynamic_gridwise_generic_reduction.hpp"
 

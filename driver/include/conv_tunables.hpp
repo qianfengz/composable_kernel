@@ -128,7 +128,6 @@ conv_hw_out_size(int hw_in_size, int leftPad, int rightPad, int dilation, int yx
     return (hw_in_size + leftPad + rightPad - dilation * (yx_size - 1) - 1) / stride + 1;
 }
 
-<<<<<<< HEAD
 struct tunable_dyn_generic_reduction
 {
     ck::index_t BlockSize; 
@@ -139,6 +138,4 @@ struct tunable_dyn_generic_reduction
 
 static struct tunable_dyn_generic_reduction default_tunable_dyn_generic_reduction = {256, 8, 2, 2}; 
 
-=======
->>>>>>> master
 #endif

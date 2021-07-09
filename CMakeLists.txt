@@ -78,16 +78,16 @@ if(DEVICE_BACKEND STREQUAL "AMD")
     set(REDUCE_OLC_SOURCE driver/reduce_driver_olc.cpp)
 endif()
 
-add_executable(conv_driver_v2 ${CONV_V2_SOURCE})
-add_executable(conv_bwd_data_driver_v2 ${CONV_BWD_DATA_V2_SOURCE})
+##add_executable(conv_driver_v2 ${CONV_V2_SOURCE})
+##add_executable(conv_bwd_data_driver_v2 ${CONV_BWD_DATA_V2_SOURCE})
 add_executable(conv_driver_v2_olc ${CONV_V2_OLC_SOURCE})
 add_executable(reduce_driver_olc ${REDUCE_OLC_SOURCE})
 
 target_include_directories(conv_driver_v2_olc PRIVATE driver/olCompiling/include/)
 target_include_directories(reduce_driver_olc PRIVATE driver/olCompiling/include/)
 
-target_link_libraries(conv_driver_v2 PRIVATE modConv)
-target_link_libraries(conv_bwd_data_driver_v2 PRIVATE modConv)
+##target_link_libraries(conv_driver_v2 PRIVATE modConv)
+##target_link_libraries(conv_bwd_data_driver_v2 PRIVATE modConv)
 target_link_libraries(conv_driver_v2_olc PRIVATE modConv)
 target_link_libraries(reduce_driver_olc PRIVATE modConv)
 
