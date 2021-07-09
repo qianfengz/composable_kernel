@@ -18,7 +18,7 @@
 #define CK_AMD_GPU_GFX906 1
 #elif 1
 #define CK_AMD_GPU_GFX908 1
-#elif 1
+#elif 0
 #define CK_AMD_GPU_GFX1030 1
 #endif
 
@@ -28,11 +28,11 @@
 #endif
 
 // launch bounds
-#define CK_USE_LAUNCH_BOUNDS 0
+#define CK_USE_LAUNCH_BOUNDS 1
 
 #ifdef CK_USE_LAUNCH_BOUNDS
 #define CK_MAX_THREAD_PER_BLOCK 256
-#define CK_MIN_BLOCK_PER_CU 1
+#define CK_MIN_BLOCK_PER_CU 2
 #endif
 
 // buffer resourse
@@ -54,8 +54,13 @@
 #define CK_THREADWISE_GEMM_USE_AMD_INLINE_ASM 1
 #endif
 
-#ifndef CK_USE_AMD_V_FMAC_F32
-#define CK_USE_AMD_V_FMAC_F32 1
+// AMD DLOPS
+#ifndef CK_USE_AMD_DLOP
+#define CK_USE_AMD_DLOP 1
+#endif
+
+#ifndef CK_USE_AMD_DLOP_INLINE_ASM
+#define CK_USE_AMD_DLOP_INLINE_ASM 1
 #endif
 
 // AMD buffer addressing
