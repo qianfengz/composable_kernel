@@ -464,9 +464,9 @@ struct BlockwiseReduction_2d_block_buffer
 {
     using compType = typename opReduce::dataType;
     constexpr static index_t BlockSize =
-        blockIsOneRow ? buffer2dDesc::GetLengths()[1] : buffer2dDesc::GetLengths()[0];
+        blockIsOneRow ? buffer2dDesc::GetLength(Number<1>{}) : buffer2dDesc::GetLength(Number<0>{});
     constexpr static index_t NumBlocks =
-        blockIsOneRow ? buffer2dDesc::GetLengths()[0] : buffer2dDesc::GetLengths()[1];
+        blockIsOneRow ? buffer2dDesc::GetLength(Number<0>{}) : buffer2dDesc::GetLength(Number<1>{});
     using binop = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
 
     // This interface does not accumulate on indices

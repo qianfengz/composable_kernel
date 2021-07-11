@@ -51,7 +51,7 @@ get_definition_string_from_tunable(const tunable_dyn_generic_reduction* pt)
 {
     std::string out;
 
-    out += " -DCK_PARAM_BlockSize=" + std::to_string(pt->BlockSize);
+    out += " -DCK_PARAM_BLOCKSIZE=" + std::to_string(pt->BlockSize);
     out += " -DCK_PARAM_THREAD_BUFFER_LENGTH=" + std::to_string(pt->GredThreadBufferLength);
     out += " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" + std::to_string(pt->GredAccessesPerThreadInBlock);
     out += " -DCK_PARAM_ACCESSES_PER_THREAD_INWARP=" + std::to_string(pt->GredAccessesPerThreadInWarp);
@@ -324,7 +324,7 @@ void device_dynamic_generic_reduction_olc(
 
     ReductionMethod_t reduceImpl = configurator.getReductionMethod(invariantLength, toReduceLength);
     auto gridSize                = configurator.getGridSize(invariantLength, toReduceLength);
-    size_t blkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? gridSize / invariantLength : 0;    
+    size_t BlkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? gridSize / invariantLength : 0;    
 
     const std::vector<size_t> vld  = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
@@ -362,6 +362,8 @@ void device_dynamic_generic_reduction_olc(
     param += " -DCK_PARAM_REDUCE_OP=" + std::to_string(GetReduceTensorOpId(reduceOp));
     param += " -DCK_PARAM_NAN_PROPAGATE=" + std::to_string(nanPropaOpt == PROPAGATE_NAN ? 1 : 0);
     param += " -DCK_PARAM_REDUCE_INDICES=" + std::to_string(reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES ? 1 : 0);
+    param += " -DCK_PARAM_IN_DIMS=" + std::to_string(inLengths.size()); 
+    param += " -DCK_PARAM_OUT_DIMS=" + std::to_string(outLengths.size()); 
 	     
     network_config = get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" + get_network_config_string_from_tunable(tunable) + "_"; 
 
@@ -390,7 +392,7 @@ void device_dynamic_generic_reduction_olc(
         auto network_config_1 = network_config + "_1";
 
         timer1.Start();
-        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), gridSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
+        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), gridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
 
@@ -398,7 +400,7 @@ void device_dynamic_generic_reduction_olc(
         auto network_config_2 = network_config + "_2";
 
         timer2.Start();
-        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, blkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
+        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
         timer2.End();
 
@@ -406,7 +408,7 @@ void device_dynamic_generic_reduction_olc(
         kernel2_times.push_back(timer2.GetElapsedTime());
 
         if (reduceImpl == ReductionMethod_t::MultiBlock) {
-            auto toReduceLength_2 = blkGroupSize;
+            auto toReduceLength_2 = BlkGroupSize;
             auto gridSize_2       = configurator.getGridSize_2(invariantLength, toReduceLength_2);
             const std::vector<size_t> vgd2_2 = {gridSize_2 * tunable->BlockSize, size_t{1}, size_t{1}};
             auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2); 
@@ -415,7 +417,7 @@ void device_dynamic_generic_reduction_olc(
             network_config_1 = network_config + "_1";
 
             timer1.Start(); 
-            handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl2), gridSize_2, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
+            handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl2), gridSize_2, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
                                                                                                                   p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding);
 	    timer1.End(); 
 
@@ -423,7 +425,7 @@ void device_dynamic_generic_reduction_olc(
             network_config_2 = network_config + "_2";
 
             timer2.Start(); 
-            handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2_2, param)(static_cast<int>(reduceImpl2), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
+            handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2_2, param)(static_cast<int>(reduceImpl2), origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
 	    timer1.End(); 
 
