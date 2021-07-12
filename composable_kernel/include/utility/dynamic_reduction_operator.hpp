@@ -145,7 +145,7 @@ __device__ half_t Min<half_t>::GetZeroVal()
 template <class T, bool hasDividing>
 struct unary_identic
 {
-    unary_identic(int divider = 1) 
+    __device__ unary_identic(const int divider = 1) 
     {
         scaler = 1.0f / static_cast<float>(divider); 
     }; 
@@ -158,7 +158,7 @@ struct unary_identic
 template <class T>
 struct unary_identic<T, false>
 {
-    unary_identic(int divider = 1)
+    __device__ unary_identic(const int divider = 1)
     {
         (void)divider;
     };
@@ -169,7 +169,7 @@ struct unary_identic<T, false>
 template <class T, bool hasDividing>
 struct unary_square
 {
-    unary_square(int divider = 1)
+    __device__ unary_square(const int divider = 1)
     {
         scaler = 1.0f / static_cast<float>(divider);
     };
@@ -187,7 +187,7 @@ struct unary_square
 template <class T>
 struct unary_square<T, false>
 {
-    unary_square(int divider = 1)
+    __device__ unary_square(const int divider = 1)
     {
         (void)divider;
     };
@@ -198,7 +198,7 @@ struct unary_square<T, false>
 template <class T, bool hasDividing>
 struct unary_abs
 {
-    unary_abs(int divider = 1)
+    __device__ unary_abs(const int divider = 1)
     {
         scaler = 1.0f / static_cast<float>(divider);
     };
@@ -216,7 +216,7 @@ struct unary_abs
 template <class T>
 struct unary_abs<T, false>
 {
-    unary_abs(int divider = 1)
+    __device__ unary_abs(const int divider = 1)
     {
         (void)divider;
     };
@@ -243,7 +243,7 @@ inline __device__ __half __habs(__half x)
 template <bool hasDividing>
 struct unary_abs<half_t, hasDividing>
 {
-    unary_abs(int divider = 1)
+    __device__ unary_abs(const int divider = 1)
     {
         scaler = 1.0f / static_cast<float>(divider);
     };
@@ -267,6 +267,11 @@ struct unary_abs<half_t, false>
 template <class T>
 struct unary_sqrt
 {
+    __device__ unary_sqrt(const int divider = 1)
+    {
+	(void)divider; 
+    }; 	    
+
     __device__ inline constexpr void operator()(T& a) const { a = sqrtf(a); };
 };
 

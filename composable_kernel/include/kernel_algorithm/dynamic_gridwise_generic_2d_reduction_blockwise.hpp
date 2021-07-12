@@ -59,6 +59,9 @@ struct GridwiseReduction_xy_to_x_blockwise
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
 
+    static constexpr auto block_buff_2d_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<GredAccessesPerThreadInBlock>{}, Number<BlockSize>{}));
+    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc), compType, true, opReduce, nanPropaOpt>;
+
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
 		        srcDataType alpha,
                         const srcDataType* const __restrict__ p_src_global,
@@ -133,13 +136,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                          in_block_desc,
                                                          make_multi_index(0, 0));	
 
-        constexpr auto block_buff_2d_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<GredAccessesPerThreadInBlock>{}, Number<BlockSize>{}));
-
-        using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc),
-                                                                    compType,
-                                                                    true,
-                                                                    opReduce,
-                                                                    nanPropaOpt>;
+        constexpr auto in_block_copy_step = make_multi_index(0, BlockBufferSize); 
 
         const index_t toReduceBlocks = (toReduceLength + BlockSize - 1) / BlockSize;
 
@@ -148,8 +145,8 @@ struct GridwiseReduction_xy_to_x_blockwise
         {
             blockwise_reduce::set_buffer_value(in_block_buf, zeroVal);
 
-            blockwise_src_load.RunRead(src2dDesc, src_global_buf, type_convert<srcDataType>{}(zeroVal));
-            blockwise_src_load.RunWrite(in_block_desc, in_block_buf, type_convert<compType>{}(zeroVal)); 
+            blockwise_src_load.RunRead(src2dDesc, src_global_buf);
+            blockwise_src_load.RunWrite(in_block_desc, in_block_buf); 
 
             __syncthreads();
 
@@ -161,10 +158,10 @@ struct GridwiseReduction_xy_to_x_blockwise
                                         : toReduceBlocks - reducedBlocks;
             blockwise_reduce::Reduce(in_block_buf, BlocksInOneOp, accuValue_buf(Number<0>{}));
 
-            blockwise_src_load.MoveSrcSliceWindow(src2dDesc, Sequence<0, BlockBufferSize>{});
+            blockwise_src_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
-        posUnaryOp(accuValue_buf[0]);
+        posUnaryOp(accuValue_buf(Number<0>{}));
 
         using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
@@ -192,7 +189,7 @@ struct GridwiseReduction_xy_to_x_blockwise
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-                threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, priorDstValue_buf, type_convert<dstDataType>{}(zeroVal));
+                threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, make_tuple(Number<0>{}),  priorDstValue_buf);
 
                 accuValue_buf(Number<0>{}) += type_convert<compType>{}(priorDstValue_buf[Number<0>{}] * beta);
             }
@@ -210,7 +207,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(block_global_1d_id));
 
-            threadwise_dst_store.Run(ReducedDataDesc, accuValue_buf, dst1dDesc, dst_global_buf, zeroVal);
+            threadwise_dst_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_buf);
         }
     };
 
@@ -278,14 +275,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                          in_block_desc,
                                                          make_multi_index(0, 0));
 
-        constexpr auto block_buff_2d_desc = make_naive_tensor_descriptor_packed(
-            Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
-
-        using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc),
-                                                                    compType,
-                                                                    true,
-                                                                    opReduce,
-                                                                    nanPropaOpt>;
+        constexpr auto in_block_copy_step = make_multi_index(0, BlockBufferSize); 
 
         const index_t toReduceBlocks = (toReduceLength + BlockSize - 1) / BlockSize;
 
@@ -294,11 +284,11 @@ struct GridwiseReduction_xy_to_x_blockwise
         for(index_t reducedBlocks = 0; reducedBlocks < toReduceBlocks;
             reducedBlocks += GredAccessesPerThreadInBlock)
         {
-            blockwise_reduce::set_buffer_value(p_in_block_buffer, zeroVal);
+            blockwise_reduce::set_buffer_value(in_block_val_buf, zeroVal);
 
             // load block data from global to LDS, no use of double buffers (to be improved)
-            blockwise_src_load.RunRead(src2dDesc, src_global_buf, type_convert<srcDataType>{}(zeroVal));
-            blockwise_src_load.RunWrite(in_block_desc, in_block_val_buf, zeroVal);
+            blockwise_src_load.RunRead(src2dDesc, src_global_buf);
+            blockwise_src_load.RunWrite(in_block_desc, in_block_val_buf);
 
             __syncthreads();
 
@@ -317,7 +307,7 @@ struct GridwiseReduction_xy_to_x_blockwise
 
             indexOffset += BlockBufferSize;
 
-            blockwise_src_load.MoveSrcSliceWindow(src2dDesc, Sequence<0, BlockBufferSize>{});
+            blockwise_src_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
         using ReducedDataLengths       = Sequence<1>;
@@ -346,7 +336,7 @@ struct GridwiseReduction_xy_to_x_blockwise
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, priorDstValue_buf, type_convert<dstDataType>{}(zeroVal));
+                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(Number<0>{}),  priorDstValue_buf);
 
                 accuValue_buf(Number<0>{}) += type_convert<compType>{}(priorDstValue_buf[Number<0>{}] * beta);
             }
@@ -377,8 +367,8 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(block_global_1d_id));
 
-            threadwise_dst_val_store.Run(ReducedDataDesc, accuValue_buf, dst1dDesc, dst_global_val_buf, zeroVal);
-            threadwise_dst_idx_store.Run(ReducedDataDesc, accuIndex_buf, dst1dDesc, dst_global_idx_buf, 0);
+            threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_val_buf);
+            threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuIndex_buf, dst1dDesc, dst_global_idx_buf);
         }
     };
 
@@ -472,14 +462,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                          in_block_desc,
                                                          make_multi_index(0, 0));
 
-        constexpr auto block_buff_2d_desc = make_naive_tensor_descriptor_packed(
-            Sequence<GredAccessesPerThreadInBlock, BlockSize>{});
-
-        using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc),
-                                                                    compType,
-                                                                    true,
-                                                                    opReduce,
-                                                                    nanPropaOpt>;
+        constexpr auto in_block_copy_step = make_multi_index(0, BlockBufferSize); 
 
         const index_t toReduceBlocks = (toReduceLength + BlockSize - 1) / BlockSize;
 
@@ -489,10 +472,10 @@ struct GridwiseReduction_xy_to_x_blockwise
             blockwise_reduce::set_buffer_value(in_block_val_buf, zeroVal);
 
             // load block data from global to LDS, no use of double buffers (to be improved)
-            blockwise_src_val_load.RunRead(src2dDesc, src_global_val_buf, type_convert<srcDataType>{}(zeroVal));
-            blockwise_src_idx_load.RunRead(src2dDesc, src_global_idx_buf, static_cast<int>(0));
-            blockwise_src_val_load.RunWrite(in_block_desc, in_block_val_buf, zeroVal);
-            blockwise_src_idx_load.RunWrite(in_block_desc, in_block_idx_buf, static_cast<int>(0));
+            blockwise_src_val_load.RunRead(src2dDesc, src_global_val_buf);
+            blockwise_src_idx_load.RunRead(src2dDesc, src_global_idx_buf);
+            blockwise_src_val_load.RunWrite(in_block_desc, in_block_val_buf);
+            blockwise_src_idx_load.RunWrite(in_block_desc, in_block_idx_buf);
 
             __syncthreads();
 
@@ -502,8 +485,8 @@ struct GridwiseReduction_xy_to_x_blockwise
 
             blockwise_reduce::Reduce2(in_block_val_buf, in_block_idx_buf, BlocksInOneOp, accuValue_buf(Number<0>{}), accuIndex_buf(Number<0>{}));
 
-            blockwise_src_val_load.MoveSrcSliceWindow(src2dDesc, Sequence<0, BlockSize * GredAccessesPerThreadInBlock>{});
-            blockwise_src_idx_load.MoveSrcSliceWindow(src2dDesc, Sequence<0, BlockSize * GredAccessesPerThreadInBlock>{});
+            blockwise_src_val_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
+            blockwise_src_idx_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
         using ReducedDataLengths       = Sequence<1>;
@@ -532,7 +515,7 @@ struct GridwiseReduction_xy_to_x_blockwise
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, priorDstValue_buf, type_convert<dstDataType>{}(zeroVal));
+                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(Number<0>{}), priorDstValue_buf);
 
                 accuValue_buf(Number<0>{}) += type_convert<compType>{}(priorDstValue_buf[Number<0>{}] * beta);
             }
@@ -563,8 +546,8 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(block_global_1d_id));
 
-            threadwise_dst_val_store.Run(ReducedDataDesc, accuValue_buf, dst1dDesc, dst_global_val_buf, zeroVal);
-            threadwise_dst_idx_store.Run(ReducedDataDesc, accuIndex_buf, dst1dDesc, dst_global_idx_buf, 0);
+            threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_val_buf);
+            threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuIndex_buf, dst1dDesc, dst_global_idx_buf);
         }
     };
 };
