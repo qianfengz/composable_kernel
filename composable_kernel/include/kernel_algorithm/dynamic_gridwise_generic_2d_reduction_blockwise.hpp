@@ -59,8 +59,7 @@ struct GridwiseReduction_xy_to_x_blockwise
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
 
-    static constexpr auto block_buff_2d_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<GredAccessesPerThreadInBlock>{}, Number<BlockSize>{}));
-    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc), compType, true, opReduce, nanPropaOpt>;
+    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<GredAccessesPerThreadInBlock, BlockSize, compType, true, opReduce, nanPropaOpt>;
 
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
 		        srcDataType alpha,
@@ -91,7 +90,7 @@ struct GridwiseReduction_xy_to_x_blockwise
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
         const auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
-        const auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);	
+        auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);	
 	StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal       = opReduce::GetZeroVal();
@@ -223,11 +222,11 @@ struct GridwiseReduction_xy_to_x_blockwise
         __shared__ int block_indices_buffer[BlockBufferSize];
 
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        const auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
-        const auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-        const auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
-        const auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(block_indices_buffer, BlockBufferSize);
+        auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
+        auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(block_indices_buffer, BlockBufferSize);
 	
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
@@ -388,11 +387,11 @@ struct GridwiseReduction_xy_to_x_blockwise
 
         const auto src_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, src2dDesc.GetElementSpaceSize());
         const auto src_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, src2dDesc.GetElementSpaceSize());	
-        const auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
-        const auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-        const auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
-        const auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(block_indices_buffer, BlockBufferSize);
+        auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
+        auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(block_indices_buffer, BlockBufferSize);
 
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;

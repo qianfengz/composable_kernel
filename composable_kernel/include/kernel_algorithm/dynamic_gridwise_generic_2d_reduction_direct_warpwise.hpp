@@ -146,7 +146,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         if(thread_inwarp_id == 0)
         {
             if(!float_equal_one{}(alpha))
-                accuValue_buf[0] *= type_convert<compType>{}(alpha);
+                accuValue_buf(Number<0>{}) *= type_convert<compType>{}(alpha);
 
             if(!float_equal_zero{}(beta))
             {

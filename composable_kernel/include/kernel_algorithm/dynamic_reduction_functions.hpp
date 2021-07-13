@@ -111,11 +111,10 @@ struct ThreadReduce
     // This interface does not accumulate on indices
     __device__ static void Reduce(const BufferType &thread_buffer, compType& accuData)
     {
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
             binop::calculate(accuData, currVal);
-        }
+        } );
     };
 
     // This interface accumulates on both data values and indices and
@@ -123,12 +122,11 @@ struct ThreadReduce
     __device__ static void
     Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
     {
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
             int currIndex    = i + indexStart;
             binop::calculate(accuData, currVal, accuIndex, currIndex);
-        }
+        } );
     };
 
     // This interface accumulates on both data values and indices and
@@ -138,27 +136,28 @@ struct ThreadReduce
                                    compType& accuData,
                                    int& accuIndex)
     {
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
-            int currIndex    = thread_indices_buffer[i];
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
+            int currIndex    = thread_indices_buffer[Number<i>{}];
             binop::calculate(accuData, currVal, accuIndex, currIndex);
-        }
+        } );
     };
 
     // Set the elements in the per-thread buffer to a specific value
     __device__ static void set_buffer_value(BufferType &thread_buffer, DataType value)
     {
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-            thread_buffer(i) = value;
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            thread_buffer(Number<i>{}) = value;
+        } );	
     };
 
     // Execute unary operation on the per-thread buffer elements
     template <typename unary_op_type>
     __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
     {
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-            unary_op(thread_buffer(i));
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            unary_op(thread_buffer(Number<i>{}));
+        } ); 	
     };
 };
 
@@ -190,11 +189,10 @@ struct WarpReduce
     {
         compType lAccuData = opReduce::GetZeroVal();
 
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
             binop::calculate(lAccuData, currVal);
-        }
+        } ); 
 
         // synchronize among all threads in this warp
         __all(1);
@@ -215,11 +213,10 @@ struct WarpReduce
     {
         compType lAccuData = opReduce::GetZeroVal();
 
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
             binop::calculate(lAccuData, currVal);
-        }
+        } ); 
 
         __syncthreads();
 
@@ -270,12 +267,11 @@ struct WarpReduce
         int lAccuIndex           = 0;
         index_t thread_inwarp_id = get_thread_local_1d_id() % warpSize;
 
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
             int currIndex    = thread_inwarp_id * ThreadBufferLen + i + indexStart;
             binop::calculate(lAccuData, currVal, lAccuIndex, currIndex);
-        }
+        } );
 
         // synchronize among all threads in this warp
         __all(1);
@@ -303,12 +299,11 @@ struct WarpReduce
         index_t warpId           = thread_id / warpSize;
         index_t thread_inwarp_id = thread_id % warpSize;
 
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
             int currIndex    = thread_inwarp_id * ThreadBufferLen + i + indexStart;
             binop::calculate(lAccuData, currVal, lAccuIndex, currIndex);
-        }
+        } ); 
 
         __shared__ compType shuffle_data_buffer[BlockSize];
         __shared__ int shuffle_indices_buffer[BlockSize];
@@ -359,12 +354,11 @@ struct WarpReduce
         compType lAccuData = opReduce::GetZeroVal();
         int lAccuIndex     = 0;
 
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
-            int currIndex    = thread_indices_buffer[i];
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
+            int currIndex    = thread_indices_buffer[Number<i>{}];
             binop::calculate(lAccuData, currVal, lAccuIndex, currIndex);
-        }
+        } ); 
 
         // synchronize among all threads in this warp
         __all(1);
@@ -391,12 +385,11 @@ struct WarpReduce
         index_t warpId           = thread_id / warpSize;
         index_t thread_inwarp_id = thread_id % warpSize;
 
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-        {
-            compType currVal = type_convert<compType>{}(thread_buffer[i]);
-            int currIndex    = thread_indices_buffer[i];
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            compType currVal = type_convert<compType>{}(thread_buffer[Number<i>{}]);
+            int currIndex    = thread_indices_buffer[Number<i>{}];
             binop::calculate(lAccuData, currVal, lAccuIndex, currIndex);
-        }
+        } ); 
 
         __shared__ compType shuffle_data_buffer[BlockSize];
         __shared__ int shuffle_indices_buffer[BlockSize];
@@ -431,8 +424,9 @@ struct WarpReduce
     template <typename BufferType>
     __device__ static void set_buffer_value(BufferType &thread_buffer, DataType value)
     {
-        for(index_t i          = 0; i < ThreadBufferLen; i++)
-            thread_buffer(i) = value;
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            thread_buffer(Number<i>{}) = value;
+        } ); 	
 
         __all(1);
     };
@@ -441,30 +435,32 @@ struct WarpReduce
     template <typename unary_op_type, typename BufferType>
     __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
     {
-        for(index_t i = 0; i < ThreadBufferLen; i++)
-            unary_op(thread_buffer(i));
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
+            unary_op(thread_buffer(Number<i>{}));
+        } ); 	
 
         __all(1);
     };
 };
 
-template <typename buffer2dDesc,
+template <int NumRows, int RowSize, 
           typename DataType,
           bool blockIsOneRow,
           typename opReduce,
           NanPropagation_t nanPropaOpt>
 struct BlockwiseReduction_2d_block_buffer
 {
+    static constexpr auto buffer2dDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<NumRows>{}, Number<RowSize>{}));
+
     using compType = typename opReduce::dataType;
-    constexpr static index_t BlockSize =
-        blockIsOneRow ? buffer2dDesc::GetLength(Number<1>{}) : buffer2dDesc::GetLength(Number<0>{});
-    constexpr static index_t NumBlocks =
-        blockIsOneRow ? buffer2dDesc::GetLength(Number<0>{}) : buffer2dDesc::GetLength(Number<1>{});
+
+    static constexpr index_t BlockSize = blockIsOneRow ? RowSize : NumRows;
+    static constexpr index_t NumBlocks = blockIsOneRow ? NumRows : RowSize;
     using binop = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
 
     // This interface does not accumulate on indices
-    __device__ static void
-    Reduce(DataType* p_block_buffer, index_t toReduceBlocks, compType& accuData)
+    template <typename BufferType>
+    __device__ static void Reduce(BufferType &block_buffer, index_t toReduceBlocks, compType& accuData)
     {
         const index_t thread_local_id = get_thread_local_1d_id();
         compType lAccuData            = opReduce::GetZeroVal();
@@ -472,17 +468,17 @@ struct BlockwiseReduction_2d_block_buffer
         index_t offset;
         for(index_t otherDimInd = 0; otherDimInd < toReduceBlocks; otherDimInd++)
         {
-            offset = blockIsOneRow ? buffer2dDesc::CalculateOffset({otherDimInd, thread_local_id})
-                                   : buffer2dDesc::CalculateOffset({thread_local_id, otherDimInd});
-            compType opData = type_convert<compType>{}(p_block_buffer[offset]);
+            offset = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, thread_local_id))
+                                   : buffer2dDesc.CalculateOffset(make_tuple(thread_local_id, otherDimInd));
+            compType opData = type_convert<compType>{}(block_buffer[offset]);
 
             binop::calculate(lAccuData, opData);
         }
 
-        offset = blockIsOneRow ? buffer2dDesc::CalculateOffset({0, thread_local_id})
-                               : buffer2dDesc::CalculateOffset({thread_local_id, 0});
+        offset = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(0, thread_local_id))
+                               : buffer2dDesc.CalculateOffset(make_tuple(thread_local_id, 0));
 
-        p_block_buffer[offset] = lAccuData;
+        block_buffer(offset) = lAccuData;
 
         __syncthreads();
 
@@ -490,18 +486,16 @@ struct BlockwiseReduction_2d_block_buffer
         {
             if(thread_local_id < indOffset)
             {
-                index_t offset1 = blockIsOneRow
-                                      ? buffer2dDesc::CalculateOffset({0, thread_local_id})
-                                      : buffer2dDesc::CalculateOffset({thread_local_id, 0});
+                index_t offset1 = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(0, thread_local_id))
+                                                : buffer2dDesc.CalculateOffset(make_tuple(thread_local_id, 0));
 
-                index_t offset2 =
-                    blockIsOneRow ? buffer2dDesc::CalculateOffset({0, thread_local_id + indOffset})
-                                  : buffer2dDesc::CalculateOffset({thread_local_id + indOffset, 0});
+                index_t offset2 = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(0, thread_local_id + indOffset))
+                                                : buffer2dDesc.CalculateOffset(make_tuple(thread_local_id + indOffset, 0));
 
-                compType opData1 = type_convert<compType>{}(p_block_buffer[offset1]);
-                compType opData2 = type_convert<compType>{}(p_block_buffer[offset2]);
+                compType opData1 = type_convert<compType>{}(block_buffer[offset1]);
+                compType opData2 = type_convert<compType>{}(block_buffer[offset2]);
                 binop::calculate(opData1, opData2);
-                p_block_buffer[offset1] = type_convert<DataType>{}(opData1);
+                block_buffer(offset1) = type_convert<DataType>{}(opData1);
             }
 
             __syncthreads();
@@ -509,18 +503,15 @@ struct BlockwiseReduction_2d_block_buffer
 
         if(thread_local_id == 0)
         {
-            compType tmpVal = type_convert<compType>{}(p_block_buffer[0]);
+            compType tmpVal = type_convert<compType>{}(block_buffer[0]);
 
             binop::calculate(accuData, tmpVal);
         }
     };
 
     // This interface accumulates on both data values and indices
-    __device__ static void Reduce2(DataType* p_block_buffer,
-                                   int* block_indices_buffer,
-                                   index_t toReduceBlocks,
-                                   compType& accuData,
-                                   int& accuIndex)
+   template <typename BufferType, typename IdxBufferType>
+    __device__ static void Reduce2(BufferType &block_buffer, IdxBufferType &block_indices_buffer, index_t toReduceBlocks, compType& accuData, int& accuIndex)
     {
         const index_t thread_local_id     = get_thread_local_1d_id();
         compType lAccuData                = opReduce::GetZeroVal();
@@ -533,19 +524,17 @@ struct BlockwiseReduction_2d_block_buffer
                 {
                     if(thread_local_id % (indOffset * 2) == 0)
                     {
-                        index_t offset1 =
-                            buffer2dDesc::CalculateOffset({otherDimInd, thread_local_id});
-                        index_t offset2 = buffer2dDesc::CalculateOffset(
-                            {otherDimInd, thread_local_id + indOffset});
+                        index_t offset1 = buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, thread_local_id));
+                        index_t offset2 = buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, thread_local_id + indOffset));
 
-                        compType currVal1 = type_convert<compType>{}(p_block_buffer[offset1]);
-                        compType currVal2 = type_convert<compType>{}(p_block_buffer[offset2]);
+                        compType currVal1 = type_convert<compType>{}(block_buffer[offset1]);
+                        compType currVal2 = type_convert<compType>{}(block_buffer[offset2]);
                         int currIndex1    = block_indices_buffer[offset1];
                         int currIndex2    = block_indices_buffer[offset2];
 
                         binop::calculate(currVal1, currVal2, currIndex1, currIndex2);
-                        p_block_buffer[offset1]       = type_convert<DataType>{}(currVal1);
-                        block_indices_buffer[offset1] = currIndex1;
+                        block_buffer(offset1)       = type_convert<DataType>{}(currVal1);
+                        block_indices_buffer(offset1) = currIndex1;
                     }
                     __syncthreads();
                 }
@@ -555,9 +544,9 @@ struct BlockwiseReduction_2d_block_buffer
             {
                 for(index_t otherDimInd = 0; otherDimInd < toReduceBlocks; otherDimInd++)
                 {
-                    index_t offset = buffer2dDesc::CalculateOffset({otherDimInd, 0});
+                    index_t offset = buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, 0));
 
-                    compType tmpVal = type_convert<compType>{}(p_block_buffer[offset]);
+                    compType tmpVal = type_convert<compType>{}(block_buffer[offset]);
                     int tmpIndex    = block_indices_buffer[offset];
 
                     binop::calculate(lAccuData, tmpVal, lAccuIndex, tmpIndex);
@@ -570,17 +559,17 @@ struct BlockwiseReduction_2d_block_buffer
 
             for(index_t otherDimInd = 0; otherDimInd < toReduceBlocks; otherDimInd++)
             {
-                offset           = buffer2dDesc::CalculateOffset({thread_local_id, otherDimInd});
-                compType currVal = type_convert<compType>{}(p_block_buffer[offset]);
+                offset           = buffer2dDesc.CalculateOffset(make_tuple(thread_local_id, otherDimInd));
+                compType currVal = type_convert<compType>{}(block_buffer[offset]);
                 int currIndex    = block_indices_buffer[offset];
 
                 binop::calculate(lAccuData, currVal, lAccuIndex, currIndex);
             }
 
-            offset = buffer2dDesc::CalculateOffset({thread_local_id, 0});
+            offset = buffer2dDesc.CalculateOffset(make_tuple(thread_local_id, 0));
 
-            p_block_buffer[offset]       = lAccuData;
-            block_indices_buffer[offset] = lAccuIndex;
+            block_buffer(offset)       = lAccuData;
+            block_indices_buffer(offset) = lAccuIndex;
 
             __syncthreads();
 
@@ -588,18 +577,17 @@ struct BlockwiseReduction_2d_block_buffer
             {
                 if(thread_local_id % (indOffset * 2) == 0)
                 {
-                    index_t offset1 = buffer2dDesc::CalculateOffset({thread_local_id, 0});
-                    index_t offset2 =
-                        buffer2dDesc::CalculateOffset({thread_local_id + indOffset, 0});
+                    index_t offset1 = buffer2dDesc.CalculateOffset(make_tuple(thread_local_id, 0));
+                    index_t offset2 = buffer2dDesc.CalculateOffset(make_tuple(thread_local_id + indOffset, 0));
 
-                    compType currVal1 = type_convert<compType>{}(p_block_buffer[offset1]);
-                    compType currVal2 = type_convert<compType>{}(p_block_buffer[offset2]);
+                    compType currVal1 = type_convert<compType>{}(block_buffer[offset1]);
+                    compType currVal2 = type_convert<compType>{}(block_buffer[offset2]);
                     int currIndex1    = block_indices_buffer[offset1];
                     int currIndex2    = block_indices_buffer[offset2];
 
                     binop::calculate(currVal1, currVal2, currIndex1, currIndex2);
-                    p_block_buffer[offset1]       = type_convert<DataType>{}(currVal1);
-                    block_indices_buffer[offset1] = currIndex1;
+                    block_buffer(offset1)       = type_convert<DataType>{}(currVal1);
+                    block_indices_buffer(offset1) = currIndex1;
                 }
 
                 __syncthreads();
@@ -607,7 +595,7 @@ struct BlockwiseReduction_2d_block_buffer
 
             if(thread_local_id == 0)
             {
-                compType tmpVal = type_convert<compType>{}(p_block_buffer[0]);
+                compType tmpVal = type_convert<compType>{}(block_buffer[0]);
                 int tmpIndex    = block_indices_buffer[0];
 
                 binop::calculate(accuData, tmpVal, accuIndex, tmpIndex);
@@ -615,17 +603,17 @@ struct BlockwiseReduction_2d_block_buffer
         });
     };
 
-    __device__ static void set_buffer_value(DataType* p_block_buffer, DataType value)
+    template <typename BufferType> 
+    __device__ static void set_buffer_value(BufferType &block_buffer, DataType value)
     {
         index_t thread_id = get_thread_local_1d_id();
 
         for(index_t otherDimInd = 0; otherDimInd < NumBlocks; otherDimInd++)
         {
-            index_t offset = blockIsOneRow
-                                 ? buffer2dDesc::CalculateOffset({otherDimInd, thread_id})
-                                 : buffer2dDesc::CalculateOffset({thread_id, otherDimInd});
+            index_t offset = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, thread_id))
+                                           : buffer2dDesc.CalculateOffset(make_tuple(thread_id, otherDimInd));
 
-            p_block_buffer[offset] = value;
+            block_buffer(offset) = value;
 
             __syncthreads();
         }
@@ -634,35 +622,34 @@ struct BlockwiseReduction_2d_block_buffer
     // Initialize the block-wise indices buffer, the index for each element in the block-wise data
     // buffer
     // is calculated according to its position in the buffer and the global starting index
-    __device__ static void init_buffer_indices(int* block_indices_buffer, int indexStart)
+    template <typename IdxBufferType>
+    __device__ static void init_buffer_indices(IdxBufferType &block_indices_buffer, int indexStart)
     {
         index_t thread_id = get_thread_local_1d_id();
 
         for(index_t otherDimInd = 0; otherDimInd < NumBlocks; otherDimInd++)
         {
-            index_t offset = blockIsOneRow
-                                 ? buffer2dDesc::CalculateOffset({otherDimInd, thread_id})
-                                 : buffer2dDesc::CalculateOffset({thread_id, otherDimInd});
+            index_t offset = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, thread_id))
+                                           : buffer2dDesc.CalculateOffset(make_tuple(thread_id, otherDimInd));
 
-            block_indices_buffer[offset] = offset + indexStart;
+            block_indices_buffer(offset) = offset + indexStart;
 
             __syncthreads();
         }
     };
 
     // Execute unary operation on the block buffer elements
-    template <typename unary_op_type>
-    __device__ static void operate_on_elements(unary_op_type & unary_op, DataType* p_block_buffer)
+    template <typename unary_op_type, typename BufferType>
+    __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &block_buffer)
     {
         index_t thread_id = get_thread_local_1d_id();
 
         for(index_t otherDimInd = 0; otherDimInd < NumBlocks; otherDimInd++)
         {
-            index_t offset = blockIsOneRow
-                                 ? buffer2dDesc::CalculateOffset({otherDimInd, thread_id})
-                                 : buffer2dDesc::CalculateOffset({thread_id, otherDimInd});
+            index_t offset = blockIsOneRow ? buffer2dDesc.CalculateOffset(make_tuple(otherDimInd, thread_id))
+                                           : buffer2dDesc.CalculateOffset(make_tuple(thread_id, otherDimInd));
 
-            unary_op(p_block_buffer[offset]);
+            unary_op(block_buffer(offset));
 
             __syncthreads();
         }

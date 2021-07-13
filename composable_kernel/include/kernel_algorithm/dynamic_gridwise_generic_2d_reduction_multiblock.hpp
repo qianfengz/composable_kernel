@@ -55,10 +55,7 @@ struct GridwiseReduction_xy_to_x_multiblock
     using preUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::posUnaryOp;
 
-    static constexpr auto block_buff_2d_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<GredAccessesPerThreadInBlock>{}, Number<BlockSize>{}));
-
-    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(block_buff_2d_desc), compType, true, opReduce, nanPropaOpt>;
-    
+    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<GredAccessesPerThreadInBlock, BlockSize, compType, true, opReduce, nanPropaOpt>;
 
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
 		        srcDataType alpha,
@@ -87,9 +84,9 @@ struct GridwiseReduction_xy_to_x_multiblock
         __shared__ compType p_in_block_buffer[BlockBufferSize];
 
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        const auto workspace_global_buf = make_dynamic_buffer<AddressSpace::Global>(workspace_global, dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
+        auto workspace_global_buf = make_dynamic_buffer<AddressSpace::Global>(workspace_global, dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
 
-        const auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
+        auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal = opReduce::GetZeroVal();
@@ -105,10 +102,10 @@ struct GridwiseReduction_xy_to_x_multiblock
         const index_t blkgroup_id     = block_global_id / BlkGroupSize;
         const index_t block_local_id  = block_global_id % BlkGroupSize;
 
-        constexpr index_t reduceSizePerBlock =
+        const index_t reduceSizePerBlock =
             (((toReduceLength + BlkGroupSize - 1) / BlkGroupSize + BlockBufferSize - 1) / BlockBufferSize) * BlockBufferSize;
 
-        constexpr auto in_block_desc = make_dynamic_naive_tensor_descriptor_packed(make_tuple(Number<1>{}, Number<BlockSize * GredAccessesPerThreadInBlock>{}));
+        constexpr auto in_block_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}, Number<BlockSize * GredAccessesPerThreadInBlock>{}));
 
         using ThreadSliceLengths   = Sequence<1, GredAccessesPerThreadInBlock>;
         using ThreadClusterLengths = Sequence<1, BlockSize>;
@@ -140,10 +137,9 @@ struct GridwiseReduction_xy_to_x_multiblock
 
         constexpr auto in_block_copy_step = make_multi_index(0, BlockBufferSize); 
 
-        constexpr index_t toReduceBlocks = (reduceSizePerBlock + BlockSize - 1) / BlockSize;
+        const index_t toReduceBlocks = (reduceSizePerBlock + BlockSize - 1) / BlockSize;
 
-        for(index_t reducedBlocks = 0; reducedBlocks < toReduceBlocks;
-            reducedBlocks += GredAccessesPerThreadInBlock)
+        for(index_t reducedBlocks = 0; reducedBlocks < toReduceBlocks; reducedBlocks += GredAccessesPerThreadInBlock)
         {
             blockwise_reduce::set_buffer_value(in_block_buf, zeroVal);
 
@@ -205,11 +201,11 @@ struct GridwiseReduction_xy_to_x_multiblock
         __shared__ int p_in_block_indices_buffer[BlockBufferSize];
 
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        const auto workspace_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
-        const auto workspace_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
+        auto workspace_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
+        auto workspace_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize);
 
-        const auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_values_buffer, BlockBufferSize);
-        const auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_indices_buffer, BlockBufferSize);
+        auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_values_buffer, BlockBufferSize);
+        auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_indices_buffer, BlockBufferSize);
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
 
@@ -262,7 +258,7 @@ struct GridwiseReduction_xy_to_x_multiblock
 
         constexpr auto in_block_copy_step = make_multi_index(0, BlockBufferSize); 
 
-        constexpr index_t toReduceBlocks = (reduceSizePerBlock + BlockSize - 1) / BlockSize;
+        const index_t toReduceBlocks = (reduceSizePerBlock + BlockSize - 1) / BlockSize;
 
         blockwise_reduce::set_buffer_value(in_block_val_buf, zeroVal);
 
