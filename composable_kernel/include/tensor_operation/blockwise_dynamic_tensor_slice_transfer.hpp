@@ -89,6 +89,20 @@ struct BlockwiseDynamicTensorSliceTransfer_v4
         }
     }
 
+    template <typename SrcBuffer>
+    __device__ void RunRead(const SrcDesc& src_desc, const SrcBuffer& src_buf)
+    {
+        constexpr index_t ntransform_src = SrcDesc::GetNumOfTransform();
+
+        constexpr auto zeros = typename uniform_sequence_gen<ntransform_src, 0>::type{};
+
+        constexpr auto src_iterator_hacks =
+            make_tuple(generate_tuple([&](auto) { return zeros; }, Number<nDim>{}),
+                       generate_tuple([&](auto) { return zeros; }, Number<nDim>{}));
+
+        RunRead(src_desc, src_buf, src_iterator_hacks);
+    }
+
     template <typename DstBuffer>
     __device__ void RunWrite(const DstDesc& dst_desc, DstBuffer& dst_buf)
     {
