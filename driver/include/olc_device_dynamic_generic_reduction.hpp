@@ -254,7 +254,7 @@ void device_dynamic_generic_reduction_olc(
 
     size_t invariantLength = out.mDesc.GetElementSize();
     size_t toReduceLength = in.mDesc.GetElementSize() / invariantLength;
-    auto origReduceLen = toReduceLength;
+    int origReduceLen = toReduceLength;
 
     ReductionKernelConfigurator configurator(tunable->BlockSize, handle->GetWavefrontWidth());
 
@@ -263,7 +263,6 @@ void device_dynamic_generic_reduction_olc(
     DeviceMem out_dev_buf(sizeof(TDst) * out.mDesc.GetElementSpace());
 
     in_dev_buf.ToDevice(in.mData.data()); 
-    out_dev_buf.ToDevice(out.mData.data());
 
     auto inLengths = in.mDesc.GetLengths(); 
     auto inStrides = in.mDesc.GetStrides(); 
@@ -298,12 +297,14 @@ void device_dynamic_generic_reduction_olc(
 
     void *p_dev_src2dDesc = (char *)workspace2.GetDeviceBuffer() + 1024; 
     void *p_dev_dst1dDesc = (char *)workspace2.GetDeviceBuffer() + 2048;
-    bool *p_dev_src_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3172 ); 
-    bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3172 + sizeof(int) ); 
+    bool *p_dev_src_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 ); 
+    bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 + sizeof(int) ); 
     size_t *p_dev_inLengths = (size_t*)workspace2.GetDeviceBuffer(); 
     size_t *p_dev_inStrides = &p_dev_inLengths[6]; 
     size_t *p_dev_outLengths = &p_dev_inLengths[12]; 
     size_t *p_dev_outStrides = &p_dev_inLengths[18]; 
+
+    size_t *p_dev_desc_lengths = reinterpret_cast<size_t *>( (char *)workspace2.GetDeviceBuffer() + 4000 ); 
 
     workspace2.ToDevice(static_cast<const void*>(lens_buf.data()));  
 
@@ -311,7 +312,7 @@ void device_dynamic_generic_reduction_olc(
 
     DeviceMem indices_dev_buf(indicesSizeInBytes);
 
-    size_t ws_buf2_bytes_offset; 
+    size_t ws_buf2_bytes_offset = 0; 
 
     if(need_indices && workspace_size > 0)
     {
@@ -321,14 +322,13 @@ void device_dynamic_generic_reduction_olc(
         ws_buf2_bytes_offset = ((byteOffset + 63) / 64) * 64;
     };
 
-
     ReductionMethod_t reduceImpl = configurator.getReductionMethod(invariantLength, toReduceLength);
-    auto gridSize                = configurator.getGridSize(invariantLength, toReduceLength);
-    size_t BlkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? gridSize / invariantLength : 0;    
+    int gridSize                = static_cast<int>( configurator.getGridSize(invariantLength, toReduceLength) ); 
+    int BlkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? static_cast<int>(gridSize / invariantLength) : 0;    
 
     const std::vector<size_t> vld  = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
-    const std::vector<size_t> vgd2 = {static_cast<size_t>(gridSize * tunable->BlockSize), 1, 1};
+    const std::vector<size_t> vgd2 = {static_cast<size_t>(gridSize) * tunable->BlockSize, 1, 1};
 
     std::string program_name = "dynamic_gridwise_generic_reduction.cpp";
     std::string algo_name    = "dynamic_generic_reduction";
@@ -367,21 +367,21 @@ void device_dynamic_generic_reduction_olc(
 	     
     network_config = get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" + get_network_config_string_from_tunable(tunable) + "_"; 
 
-    for(auto dimLen : inLengths)
-        network_config += std::to_string(dimLen) + "_";
-
-    for(auto dimStride : inStrides)
-        network_config += std::to_string(dimStride) + "_"; 
+    network_config += "I" + std::to_string(inLengths.size()) + "_"; 
 
     network_config += "RED";
     for(auto dim : toReduceDims)
         network_config += std::to_string(dim) + "_";
     network_config += "BSIZE_" + std::to_string(tunable->BlockSize);
 
+    std::cout << std::endl << "Reduction method=" << reduceImpl << " gridSize=" << gridSize << " BlkGroupSize=" << BlkGroupSize << std::endl;
+
     std::vector<float> kernel1_times;
     std::vector<float> kernel2_times;
     std::vector<float> kernel3_times;
     std::vector<float> kernel4_times;
+
+    bool debugging = true; 
 
     for(index_t i = 0; i < nrepeat; ++i)
     {
@@ -401,7 +401,7 @@ void device_dynamic_generic_reduction_olc(
 
         timer2.Start();
         handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
-		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
+		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf, debugging, p_dev_desc_lengths);  
         timer2.End();
 
         kernel1_times.push_back(timer1.GetElapsedTime());
@@ -449,6 +449,15 @@ void device_dynamic_generic_reduction_olc(
         }; 
     };
 
-    // copy result back to host
-    out_dev_buf.FromDevice(out.mData.data());
+    if ( debugging ) {
+         workspace2.FromDevice(static_cast<void*>(lens_buf.data()));
+
+         std::cout << "Transformed src2dDesc lengths: " << lens_buf[4000/sizeof(size_t)] << " " << lens_buf[4000/sizeof(size_t)+1] << std::endl;  
+    }; 
+
+    
+    if ( !debugging ) {
+         // copy result back to host
+         out_dev_buf.FromDevice(out.mData.data());
+    }; 
 }

@@ -73,18 +73,19 @@ int main(int argc, char* argv[])
     ReduceTensorIndices_t reduceIndiceOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES; 
 
     std::vector<size_t> inLengths = {64L, 3L, 280L, 81L}; 
-    std::vector<int> invariantDims = {2, 3};  
-    std::vector<int> toReduceDims = {0, 1}; 
+    std::vector<int> invariantDims = {1, 2, 3};  
+    std::vector<int> toReduceDims = {0}; 
 
     std::vector<size_t> outLengths; 
 
     check_reduce_dims(invariantDims, toReduceDims, inLengths.size()); 
 
-    if ( invariantDims.empty() ) 
+    if ( invariantDims.empty() ) {
 	 outLengths.push_back(1); 
+    }
     else {
          for (auto dim : invariantDims) 
-	      outLengths.push_back(dim); 
+	      outLengths.push_back(inLengths[dim]); 
     }; 
    
     Tensor<srcDataType> in(inLengths);
