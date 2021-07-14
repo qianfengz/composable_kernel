@@ -83,7 +83,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     dstDataType* const __restrict__ p_dst_global)
     {
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        const auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
 	typename threadwise_reduce::BufferType in_thread_buf; 
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
@@ -187,8 +187,8 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     int* const __restrict__ indices_global)
     {
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        const auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
-        const auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
 	typename threadwise_reduce::BufferType in_thread_buf; 
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
@@ -313,8 +313,8 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
         const auto src_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, src2dDesc.GetElementSpaceSize());
         const auto src_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, src2dDesc.GetElementSpaceSize());
-        const auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
-        const auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
 	typename threadwise_reduce::BufferType in_thread_val_buf; 
 	typename threadwise_reduce::IdxBufferType in_thread_idx_buf; 

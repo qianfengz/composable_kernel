@@ -88,7 +88,7 @@ struct GridwiseReduction_xy_to_x_blockwise
         __shared__ compType p_in_block_buffer[BlockBufferSize];
         
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        const auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
         auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);	
 	StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;

@@ -178,7 +178,7 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(block_global_id));
+                                                                   false>(workspace_desc, make_multi_index(block_global_id));
 
             threadwise_workspace_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, workspace_desc, workspace_global_buf);	    
         }
@@ -311,7 +311,7 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(block_global_id));
+                                                                   false>(workspace_desc, make_multi_index(block_global_id));
 
             auto threadwise_workspace_idx_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    int,
@@ -324,7 +324,7 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(block_global_id));
+                                                                   false>(workspace_desc, make_multi_index(block_global_id));
 
 
             threadwise_workspace_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, workspace_desc, workspace_global_val_buf);
