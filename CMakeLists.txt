@@ -82,6 +82,7 @@ endif()
 ##add_executable(conv_bwd_data_driver_v2 ${CONV_BWD_DATA_V2_SOURCE})
 add_executable(conv_driver_v2_olc ${CONV_V2_OLC_SOURCE})
 add_executable(reduce_driver_olc ${REDUCE_OLC_SOURCE})
+add_executable(sequence_test driver/sequence_test.cpp)
 
 target_include_directories(conv_driver_v2_olc PRIVATE driver/olCompiling/include/)
 target_include_directories(reduce_driver_olc PRIVATE driver/olCompiling/include/)
