@@ -298,7 +298,7 @@ void device_dynamic_generic_reduction_olc(
     void *p_dev_src2dDesc = (char *)workspace2.GetDeviceBuffer() + 1024; 
     void *p_dev_dst1dDesc = (char *)workspace2.GetDeviceBuffer() + 2048;
     bool *p_dev_src_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 ); 
-    bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 + sizeof(int) ); 
+    bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 + sizeof(size_t) ); 
     size_t *p_dev_inLengths = (size_t*)workspace2.GetDeviceBuffer(); 
     size_t *p_dev_inStrides = &p_dev_inLengths[6]; 
     size_t *p_dev_outLengths = &p_dev_inLengths[12]; 
@@ -323,12 +323,12 @@ void device_dynamic_generic_reduction_olc(
     };
 
     ReductionMethod_t reduceImpl = configurator.getReductionMethod(invariantLength, toReduceLength);
-    int gridSize                = static_cast<int>( configurator.getGridSize(invariantLength, toReduceLength) ); 
-    int BlkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? static_cast<int>(gridSize / invariantLength) : 0;    
+    int GridSize                = static_cast<int>( configurator.getGridSize(invariantLength, toReduceLength) ); 
+    int BlkGroupSize = (reduceImpl == ReductionMethod_t::MultiBlock) ? GridSize / invariantLength : 0;    
 
     const std::vector<size_t> vld  = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
-    const std::vector<size_t> vgd2 = {static_cast<size_t>(gridSize) * tunable->BlockSize, 1, 1};
+    const std::vector<size_t> vgd2 = {static_cast<size_t>(GridSize) * tunable->BlockSize, 1, 1};
 
     std::string program_name = "dynamic_gridwise_generic_reduction.cpp";
     std::string algo_name    = "dynamic_generic_reduction";
@@ -374,14 +374,17 @@ void device_dynamic_generic_reduction_olc(
         network_config += std::to_string(dim) + "_";
     network_config += "BSIZE_" + std::to_string(tunable->BlockSize);
 
-    std::cout << std::endl << "Reduction method=" << reduceImpl << " gridSize=" << gridSize << " BlkGroupSize=" << BlkGroupSize << std::endl;
+    std::cout << std::endl << "Reduction method=" << reduceImpl << " GridSize=" << GridSize << " BlkGroupSize=" << BlkGroupSize << std::endl;
 
     std::vector<float> kernel1_times;
     std::vector<float> kernel2_times;
     std::vector<float> kernel3_times;
     std::vector<float> kernel4_times;
 
-    bool debugging = true; 
+    const bool debugging = true; 
+
+    if ( debugging ) 
+	  param += " -DDEBUGGING_KERNEL=1"; 
 
     for(index_t i = 0; i < nrepeat; ++i)
     {
@@ -392,16 +395,23 @@ void device_dynamic_generic_reduction_olc(
         auto network_config_1 = network_config + "_1";
 
         timer1.Start();
-        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), gridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
+        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), GridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
+
+        if ( debugging ) {
+             workspace2.FromDevice(static_cast<void*>(lens_buf.data()));
+
+             std::cout << "src use padding " <<  *(bool *)&lens_buf[3072/sizeof(size_t)] << " dst use padding " << *(bool *)&lens_buf[3072/sizeof(size_t)+1] <<  std::endl;  
+             std::cout << "Transformed src2dDesc lengths: " << lens_buf[4000/sizeof(size_t)] << "," << lens_buf[4000/sizeof(size_t)+1] << " size: " << lens_buf[4000/sizeof(size_t)+2] << "," << lens_buf[4000/sizeof(size_t)+3]  << std::endl;  
+        }; 
 
         kernel_name           = "gridwise_generic_reduce_1";
         auto network_config_2 = network_config + "_2";
 
         timer2.Start();
         handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
-		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf, debugging, p_dev_desc_lengths);  
+		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
         timer2.End();
 
         kernel1_times.push_back(timer1.GetElapsedTime());
@@ -409,15 +419,15 @@ void device_dynamic_generic_reduction_olc(
 
         if (reduceImpl == ReductionMethod_t::MultiBlock) {
             auto toReduceLength_2 = BlkGroupSize;
-            auto gridSize_2       = configurator.getGridSize_2(invariantLength, toReduceLength_2);
-            const std::vector<size_t> vgd2_2 = {gridSize_2 * tunable->BlockSize, size_t{1}, size_t{1}};
+            auto GridSize_2       = configurator.getGridSize_2(invariantLength, toReduceLength_2);
+            const std::vector<size_t> vgd2_2 = {GridSize_2 * tunable->BlockSize, size_t{1}, size_t{1}};
             auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2); 
 
             kernel_name = "gridwise_generic_reduce_2_prepare";
             network_config_1 = network_config + "_1";
 
             timer1.Start(); 
-            handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl2), gridSize_2, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
+            handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl2), GridSize_2, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
                                                                                                                   p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding);
 	    timer1.End(); 
 
@@ -452,7 +462,7 @@ void device_dynamic_generic_reduction_olc(
     if ( debugging ) {
          workspace2.FromDevice(static_cast<void*>(lens_buf.data()));
 
-         std::cout << "Transformed src2dDesc lengths: " << lens_buf[4000/sizeof(size_t)] << " " << lens_buf[4000/sizeof(size_t)+1] << std::endl;  
+         std::cout << "Transformed src2dDesc lengths: " << lens_buf[4000/sizeof(size_t)] << "," << lens_buf[4000/sizeof(size_t)+1] << " size: " << lens_buf[4000/sizeof(size_t)+2] << "," << lens_buf[4000/sizeof(size_t)+3]  << std::endl;  
     }; 
 
     
