@@ -8,14 +8,14 @@
 
 using namespace ck;
 
-template <index_t... Ns>
-static auto make_tuple_from_array_and_index_seq(const size_t *lengths, Sequence<Ns...>)
+template <typename DataType, index_t... Ns>
+static auto make_tuple_from_array_and_index_seq(const DataType *lengths, Sequence<Ns...>)
 {
-    return make_tuple(lengths[Ns]...);
+    return make_tuple(static_cast<index_t>(lengths[Ns])...);
 };
 
-template <index_t arraySize>
-static auto make_tuple_from_array(const size_t *lengths, Number<arraySize>)
+template <typename DataType, index_t arraySize>
+static auto make_tuple_from_array(const DataType *lengths, Number<arraySize>)
 {
    static_assert(arraySize >=1 && arraySize <= 6, "The tensor should have 1 to 6 dimensions");
 
@@ -24,10 +24,10 @@ static auto make_tuple_from_array(const size_t *lengths, Number<arraySize>)
    return make_tuple_from_array_and_index_seq(lengths, index_seq);
 };
 
-template <index_t... Ids>
-static auto make_passthrough_tuple_from_array_and_index_seq(const size_t *lengths, Sequence<Ids...>)
+template <typename DataType, index_t... Ids>
+static auto make_passthrough_tuple_from_array_and_index_seq(const DataType *lengths, Sequence<Ids...>)
 {
-    return make_tuple(make_pass_through_transform(lengths[Ids])...);
+    return make_tuple(make_pass_through_transform(static_cast<index_t>(lengths[Ids]))...);
 };
 
 template <index_t... Ns>

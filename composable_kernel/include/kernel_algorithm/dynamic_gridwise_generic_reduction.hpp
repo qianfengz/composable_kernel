@@ -71,6 +71,8 @@ struct Gridwise2dReduction
     {
             (void)ws_buf1_global; // unused
 
+            PRINT_MSG("Run_DirectThreadWise\n"); 
+
             using gridwise_reduce = GridwiseReduction_xy_to_x_direct_threadwise<BlockSize,
                                                                                 srcDataType,
                                                                                 dstDataType,
@@ -205,6 +207,8 @@ struct Gridwise2dReduction
                                void* const __restrict__ indices_global) const
     {
         void* const ws_buf2_global = ws_buf2_bytes_offset > 0 ? static_cast<void*>(static_cast<char*>(ws_buf1_global) + ws_buf2_bytes_offset) : nullptr;
+
+        PRINT_MSG("Run\n"); 
 
         switch (this->reduceImpl) {
 	    case ReductionMethod_t::DirectThreadWise:

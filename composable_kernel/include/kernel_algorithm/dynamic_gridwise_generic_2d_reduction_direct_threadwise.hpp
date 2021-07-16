@@ -26,6 +26,8 @@
 #ifndef CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
 #define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
 
+#define HIP_ENABLE_PRINTF
+
 #include "float_type.hpp"
 #include "dynamic_reduction_operator.hpp"
 #include "dynamic_reduction_functions.hpp"
@@ -82,6 +84,8 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global)
     {
+        PRINT_MSG_RET("Call to RunImpl1 of direct_threadwise\n"); 
+
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
         auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 

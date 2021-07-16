@@ -356,8 +356,10 @@ void device_dynamic_generic_reduction_olc(
                 param += ",";
         };
     }
-    else
+    else {
         param += " -DCK_PARAM_INVARIANT_DIMS= ";
+        param += " -DCK_REDUCE_ALL_DIMS=1"; 
+    }; 
 
     param += " -DCK_PARAM_REDUCE_OP=" + std::to_string(GetReduceTensorOpId(reduceOp));
     param += " -DCK_PARAM_NAN_PROPAGATE=" + std::to_string(nanPropaOpt == PROPAGATE_NAN ? 1 : 0);
@@ -381,7 +383,7 @@ void device_dynamic_generic_reduction_olc(
     std::vector<float> kernel3_times;
     std::vector<float> kernel4_times;
 
-    const bool debugging = true; 
+    const bool debugging = false; 
 
     if ( debugging ) 
 	  param += " -DDEBUGGING_KERNEL=1"; 
