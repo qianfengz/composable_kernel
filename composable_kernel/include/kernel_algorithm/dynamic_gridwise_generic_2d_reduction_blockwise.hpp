@@ -162,7 +162,6 @@ struct GridwiseReduction_xy_to_x_blockwise
 
         posUnaryOp(accuValue_buf(Number<0>{}));
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         // The first thread in the block stores the reduced result to the global location
@@ -179,7 +178,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    dstDataType,
                                                                    dst1dDescType,
                                                                    decltype(ReducedDataDesc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -198,7 +197,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    dstDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -309,7 +308,6 @@ struct GridwiseReduction_xy_to_x_blockwise
             blockwise_src_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         // The first thread in the block stores the reduced result to the global location
@@ -326,7 +324,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    dstDataType,
                                                                    dst1dDescType,
                                                                    decltype(ReducedDataDesc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -345,7 +343,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    dstDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -358,7 +356,7 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    int,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -488,7 +486,6 @@ struct GridwiseReduction_xy_to_x_blockwise
             blockwise_src_idx_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         // The first thread in the block stores the reduced result to the global location
@@ -505,12 +502,12 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    dstDataType,
                                                                    dst1dDescType,
                                                                    decltype(ReducedDataDesc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(block_global_1d_id));
+                                                                   true>(dst1dDesc, make_multi_index(block_global_1d_id));
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
@@ -524,26 +521,26 @@ struct GridwiseReduction_xy_to_x_blockwise
                                                                    dstDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(block_global_1d_id));
+                                                                   true>(dst1dDesc, make_multi_index(block_global_1d_id));
 
             auto threadwise_dst_idx_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    int,
                                                                    int,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(block_global_1d_id));
+                                                                   true>(dst1dDesc, make_multi_index(block_global_1d_id));
 
             threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_val_buf);
             threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuIndex_buf, dst1dDesc, dst_global_idx_buf);

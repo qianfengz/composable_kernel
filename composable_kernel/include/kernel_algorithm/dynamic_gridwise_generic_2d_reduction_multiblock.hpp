@@ -158,7 +158,6 @@ struct GridwiseReduction_xy_to_x_multiblock
             blockwise_src_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         const auto workspace_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize));
@@ -172,13 +171,13 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                                    compType,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(workspace_desc, make_multi_index(block_global_id));
+                                                                   true>(workspace_desc, make_multi_index(block_global_id));
 
             threadwise_workspace_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, workspace_desc, workspace_global_buf);	    
         }
@@ -291,7 +290,6 @@ struct GridwiseReduction_xy_to_x_multiblock
             blockwise_src_load.MoveSrcSliceWindow(src2dDesc, in_block_copy_step);
         }
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         const auto workspace_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(dst1dDesc.GetLength(Number<0>{}) * BlkGroupSize));
@@ -305,26 +303,26 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                                    compType,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(workspace_desc, make_multi_index(block_global_id));
+                                                                   true>(workspace_desc, make_multi_index(block_global_id));
 
             auto threadwise_workspace_idx_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    int,
                                                                    int,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(workspace_desc, make_multi_index(block_global_id));
+                                                                   true>(workspace_desc, make_multi_index(block_global_id));
 
 
             threadwise_workspace_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, workspace_desc, workspace_global_val_buf);

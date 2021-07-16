@@ -264,6 +264,8 @@ void device_dynamic_generic_reduction_olc(
 
     in_dev_buf.ToDevice(in.mData.data()); 
 
+    printf("output pointer = %lx\n", (unsigned long)out_dev_buf.GetDeviceBuffer()); 
+
     auto inLengths = in.mDesc.GetLengths(); 
     auto inStrides = in.mDesc.GetStrides(); 
     auto outLengths = out.mDesc.GetLengths(); 
@@ -383,11 +385,6 @@ void device_dynamic_generic_reduction_olc(
     std::vector<float> kernel3_times;
     std::vector<float> kernel4_times;
 
-    const bool debugging = false; 
-
-    if ( debugging ) 
-	  param += " -DDEBUGGING_KERNEL=1"; 
-
     for(index_t i = 0; i < nrepeat; ++i)
     {
         KernelTimer timer1, timer2;
@@ -400,13 +397,6 @@ void device_dynamic_generic_reduction_olc(
         handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), GridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
-
-        if ( debugging ) {
-             workspace2.FromDevice(static_cast<void*>(lens_buf.data()));
-
-             std::cout << "src use padding " <<  *(bool *)&lens_buf[3072/sizeof(size_t)] << " dst use padding " << *(bool *)&lens_buf[3072/sizeof(size_t)+1] <<  std::endl;  
-             std::cout << "Transformed src2dDesc lengths: " << lens_buf[4000/sizeof(size_t)] << "," << lens_buf[4000/sizeof(size_t)+1] << " size: " << lens_buf[4000/sizeof(size_t)+2] << "," << lens_buf[4000/sizeof(size_t)+3]  << std::endl;  
-        }; 
 
         kernel_name           = "gridwise_generic_reduce_1";
         auto network_config_2 = network_config + "_2";
@@ -461,15 +451,6 @@ void device_dynamic_generic_reduction_olc(
         }; 
     };
 
-    if ( debugging ) {
-         workspace2.FromDevice(static_cast<void*>(lens_buf.data()));
-
-         std::cout << "Transformed src2dDesc lengths: " << lens_buf[4000/sizeof(size_t)] << "," << lens_buf[4000/sizeof(size_t)+1] << " size: " << lens_buf[4000/sizeof(size_t)+2] << "," << lens_buf[4000/sizeof(size_t)+3]  << std::endl;  
-    }; 
-
-    
-    if ( !debugging ) {
-         // copy result back to host
-         out_dev_buf.FromDevice(out.mData.data());
-    }; 
+    // copy result back to host
+    out_dev_buf.FromDevice(out.mData.data());
 }

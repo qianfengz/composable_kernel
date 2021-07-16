@@ -66,13 +66,13 @@ int main(int argc, char* argv[])
 
     using compType = Driver::get_type_from_type_enum<compTypeId>::type;
 
-    float alpha = 1.0f; 
-    float beta = 0.0f; 
+    float alpha = 0.5f; 
+    float beta = 0.5f; 
     ReduceTensorOp_t reduceOp = ReduceTensorOp_t::REDUCE_TENSOR_ADD; 
     NanPropagation_t nanPropaOpt = NanPropagation_t::NOT_PROPAGATE_NAN;
     ReduceTensorIndices_t reduceIndiceOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES; 
 
-    std::vector<size_t> inLengths = {64L, 3L, 280L, 81L}; 
+    std::vector<size_t> inLengths = {64L, 3L, 256L, 64L}; 
     std::vector<int> invariantDims = {1, 2, 3};  
     std::vector<int> toReduceDims = {0}; 
 

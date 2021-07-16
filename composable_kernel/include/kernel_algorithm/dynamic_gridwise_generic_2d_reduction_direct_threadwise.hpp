@@ -84,7 +84,10 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global)
     {
-        PRINT_MSG_RET("Call to RunImpl1 of direct_threadwise\n"); 
+        PRINT_MSG("Call to RunImpl1 of direct_threadwise\n"); 
+
+        if (hipThreadIdx_x == 0 && hipBlockIdx_x == 0)
+            printf("out pointer = %lx\n", (unsigned long)p_dst_global); 
 
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
         auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
@@ -138,9 +141,10 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             threadwise_src_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
 
+        PRINT_MSG("thread wise reduction finished "); 
+
         posUnaryOp(accuValue_buf(Number<0>{}));
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         if(!float_equal_one{}(alpha))
@@ -153,12 +157,12 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    dstDataType,
                                                                    dst1dDescType,
                                                                    decltype(ReducedDataDesc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(thread_global_1d_id));
+                                                                   true>(dst1dDesc, make_multi_index(thread_global_1d_id));
 
             StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf; 
 
@@ -167,20 +171,23 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             accuValue_buf(Number<0>{}) *= type_convert<compType>{}(priorDstValue_buf[Number<0>{}] * beta);
         }
 
+        PRINT_MSG_RET("thread wise reduction before storing"); 
+
         auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
                                                                    dstDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
 								   InMemoryDataOperation::Set,
                                                                    1,
-                                                                   false>(dst1dDesc, make_multi_index(thread_global_1d_id));
+                                                                   true>(dst1dDesc, make_multi_index(thread_global_1d_id));
 
         threadwise_dst_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_buf);
+        PRINT_MSG_RET("thread wise reduction after storing"); 
     };
 
     __device__ static void RunImpl2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
@@ -248,7 +255,6 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             threadwise_src_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         if(!float_equal_one{}(alpha))
@@ -261,7 +267,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    dstDataType,
                                                                    dst1dDescType,
                                                                    decltype(ReducedDataDesc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -280,7 +286,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    dstDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -293,7 +299,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    int,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -379,7 +385,6 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             threadwise_src_idx_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
 
-        using ReducedDataLengths       = Sequence<1>;
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
         if(!float_equal_one{}(alpha))
@@ -392,7 +397,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    dstDataType,
                                                                    dst1dDescType,
                                                                    decltype(ReducedDataDesc),
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -412,7 +417,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    dstDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
@@ -425,7 +430,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    int,
                                                                    decltype(ReducedDataDesc),
                                                                    dst1dDescType,
-                                                                   ReducedDataLengths,
+                                                                   Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,

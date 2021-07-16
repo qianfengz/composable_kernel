@@ -205,12 +205,18 @@ __device__ static inline void gridwise_generic_reduce_pad_and_store(ReductionMet
 		            *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2; 
 		            *p_dst_use_padding = true; 
 		       }; 
+
+		       if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 )
+			    printf(" prepared dst1dDesc size : %d\n", sizeof(dst1dDesc_2));  
                   }
 		  else {
                        if ( hipThreadIdx_x == 0 ) {
 		            *static_cast<dst1dDescType*>(p_dst1dDesc) = dst1dDesc; 
 		            *p_dst_use_padding = false; 
 		       }; 
+
+		       if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 )
+			    printf(" prepared dst1dDesc size : %d\n", sizeof(dst1dDesc));  
 		  }; 
 	      }; 	 
 	      break; 
