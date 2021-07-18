@@ -398,6 +398,8 @@ void device_dynamic_generic_reduction_olc(
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
 
+        std::cout << "Prepare_1 called, to call reduce_1 " << std::endl; 
+
         kernel_name           = "gridwise_generic_reduce_1";
         auto network_config_2 = network_config + "_2";
 

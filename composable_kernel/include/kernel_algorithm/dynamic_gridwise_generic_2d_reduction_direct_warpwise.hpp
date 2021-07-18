@@ -59,6 +59,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
     using warpwise_reduce = WarpReduce<compType, BlockSize, GredAccessesPerThreadInWarp, opReduce, nanPropaOpt>;
 
+    static constexpr auto I0 = Number<0>{}; 
+
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
 		        srcDataType alpha,
                         const srcDataType* const __restrict__ p_src_global,
@@ -90,7 +92,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
         auto zeroVal = opReduce::GetZeroVal();
 
-        accuValue_buf(Number<0>{}) = zeroVal;
+        accuValue_buf(I0) = zeroVal;
 
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
         const int divider = origReduceLen; 
@@ -125,18 +127,18 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
             // zero the data on the Thread Buffer
             warpwise_reduce::set_buffer_value(in_thread_buf, zeroVal);
 
-            threadwise_src_load.Run(src2dDesc, src_global_buf, ThreadBufferDesc, make_tuple(Number<0>{}, Number<0>{}), in_thread_buf);	    
+            threadwise_src_load.Run(src2dDesc, src_global_buf, ThreadBufferDesc, make_tuple(I0, I0), in_thread_buf);	    
 
             // do element-wise pre-reduction operation
             warpwise_reduce::operate_on_elements(preUnaryOp, in_thread_buf);
 
             // do the warp-wise reduction on data of all thread buffers
-            warpwise_reduce::Reduce(in_thread_buf, accuValue_buf(Number<0>{}));
+            warpwise_reduce::Reduce(in_thread_buf, accuValue_buf(I0));
 
             threadwise_src_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
 
-        posUnaryOp(accuValue_buf(Number<0>{}));
+        posUnaryOp(accuValue_buf(I0));
 
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
@@ -145,7 +147,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         if(thread_inwarp_id == 0)
         {
             if(!float_equal_one{}(alpha))
-                accuValue_buf(Number<0>{}) *= type_convert<compType>{}(alpha);
+                accuValue_buf(I0) *= type_convert<compType>{}(alpha);
 
             if(!float_equal_zero{}(beta))
             {
@@ -163,9 +165,9 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-                threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, make_tuple(Number<0>{}), priorDstValue_buf);
+                threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 
-                accuValue_buf(Number<0>{}) += type_convert<compType>{}(priorDstValue_buf(Number<0>{}) * beta);
+                accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf(I0) * beta);
             }
 
             auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
@@ -182,7 +184,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
                                                                    true>(dst1dDesc, make_multi_index(warp_global_1d_id));
 
 
-            threadwise_dst_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_buf);
+            threadwise_dst_store.Run(ReducedDataDesc, make_tuple(I0), accuValue_buf, dst1dDesc, dst_global_buf);
         }
     };
 
@@ -203,8 +205,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
         auto zeroVal       = opReduce::GetZeroVal();
 
-        accuValue_buf(Number<0>{}) = zeroVal;
-        accuIndex_buf(Number<0>{}) = 0;
+        accuValue_buf(I0) = zeroVal;
+        accuIndex_buf(I0) = 0;
 
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
         const int divider = origReduceLen;
@@ -239,14 +241,14 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
             // zero the data on the Thread Buffer
             warpwise_reduce::set_buffer_value(in_thread_buf, zeroVal);
 
-            threadwise_src_load.Run(src2dDesc, src_global_buf, ThreadBufferDesc, make_tuple(Number<0>{}, Number<0>{}), in_thread_buf);
+            threadwise_src_load.Run(src2dDesc, src_global_buf, ThreadBufferDesc, make_tuple(I0, I0), in_thread_buf);
 
             // unary operation before reducing, needed by AMAX; For MIN/MAX, nothing is actually
             // done here
             warpwise_reduce::operate_on_elements(preUnaryOp, in_thread_buf);
 
             // do the warp-wise reduction on data of all thread buffers
-            warpwise_reduce::Reduce2(in_thread_buf, accuValue_buf(Number<0>{}), accuIndex_buf(Number<0>{}), indexOffset);
+            warpwise_reduce::Reduce2(in_thread_buf, accuValue_buf(I0), accuIndex_buf(I0), indexOffset);
 
             indexOffset += warpSize * GredAccessesPerThreadInWarp;
 
@@ -260,7 +262,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         if(thread_inwarp_id == 0)
         {
             if(!float_equal_one{}(alpha))
-                accuValue_buf(Number<0>{}) *= type_convert<compType>{}(alpha);
+                accuValue_buf(I0) *= type_convert<compType>{}(alpha);
 
             if(!float_equal_zero{}(beta))
             {
@@ -278,9 +280,9 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(Number<0>{}), priorDstValue_buf);
+                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 
-                accuValue_buf(Number<0>{}) += type_convert<compType>{}(priorDstValue_buf[Number<0>{}] * beta);
+                accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf[I0] * beta);
             }
 
             auto threadwise_dst_val_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
@@ -309,8 +311,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
                                                                    1,
                                                                    true>(dst1dDesc, make_multi_index(warp_global_1d_id));
 
-            threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_val_buf);
-            threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuIndex_buf, dst1dDesc, dst_global_idx_buf);
+            threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(I0), accuValue_buf, dst1dDesc, dst_global_val_buf);
+            threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(I0), accuIndex_buf, dst1dDesc, dst_global_idx_buf);
         }
     };
 
@@ -336,8 +338,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 	
         auto zeroVal       = opReduce::GetZeroVal();
 
-        accuValue_buf(Number<0>{}) = zeroVal;
-        accuIndex_buf(Number<0>{}) = 0;
+        accuValue_buf(I0) = zeroVal;
+        accuIndex_buf(I0) = 0;
 	
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
 
@@ -380,11 +382,11 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         for(index_t reducedLength = 0; reducedLength < toReduceLength;
             reducedLength += warpSize * GredAccessesPerThreadInWarp)
         {
-            threadwise_src_val_load.Run(src2dDesc, src_global_val_buf, ThreadBufferDesc, make_tuple(Number<0>{}, Number<0>{}), in_thread_val_buf);
-            threadwise_src_idx_load.Run(src2dDesc, src_global_idx_buf, ThreadBufferDesc, make_tuple(Number<0>{}, Number<0>{}), in_thread_idx_buf);
+            threadwise_src_val_load.Run(src2dDesc, src_global_val_buf, ThreadBufferDesc, make_tuple(I0, I0), in_thread_val_buf);
+            threadwise_src_idx_load.Run(src2dDesc, src_global_idx_buf, ThreadBufferDesc, make_tuple(I0, I0), in_thread_idx_buf);
 
             // do the warp-wise reduction on data of all thread buffers
-            warpwise_reduce::Reduce3(in_thread_val_buf, in_thread_idx_buf, accuValue_buf(Number<0>{}), accuIndex_buf(Number<0>{}));
+            warpwise_reduce::Reduce3(in_thread_val_buf, in_thread_idx_buf, accuValue_buf(I0), accuIndex_buf(I0));
 
             // zero the data on the Thread Buffer
             warpwise_reduce::set_buffer_value(in_thread_val_buf, zeroVal);
@@ -400,7 +402,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         if(thread_inwarp_id == 0)
         {
             if(!float_equal_one{}(alpha))
-                accuValue_buf(Number<0>{}) *= type_convert<compType>{}(alpha);
+                accuValue_buf(I0) *= type_convert<compType>{}(alpha);
 
             if(!float_equal_zero{}(beta))
             {
@@ -418,9 +420,9 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
                 StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(Number<0>{}),  priorDstValue_buf);
+                threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(I0),  priorDstValue_buf);
 
-                accuValue_buf(Number<0>{}) += type_convert<compType>{}(priorDstValue_buf[Number<0>{}] * beta);
+                accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf[I0] * beta);
             }
 
             auto threadwise_dst_val_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
@@ -449,8 +451,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
                                                                    1,
                                                                    true>(dst1dDesc, make_multi_index(warp_global_1d_id));
 
-            threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuValue_buf, dst1dDesc, dst_global_val_buf);
-            threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(Number<0>{}), accuIndex_buf, dst1dDesc, dst_global_idx_buf);
+            threadwise_dst_val_store.Run(ReducedDataDesc, make_tuple(I0), accuValue_buf, dst1dDesc, dst_global_val_buf);
+            threadwise_dst_idx_store.Run(ReducedDataDesc, make_tuple(I0), accuIndex_buf, dst1dDesc, dst_global_idx_buf);
         }
     };
 };
