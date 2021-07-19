@@ -27,9 +27,9 @@
 #define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
 
 #include "float_type.hpp"
-#include "dynamic_reduction_operator.hpp"
-#include "dynamic_reduction_functions.hpp"
 #include "reduction_common.hpp"
+#include "dynamic_reduction_operator.hpp"
+#include "dynamic_reduction_functions_blockwise.hpp"
 
 #include "blockwise_dynamic_tensor_slice_transfer.hpp"
 
@@ -55,7 +55,7 @@ struct GridwiseReduction_xy_to_x_multiblock
     using preUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::posUnaryOp;
 
-    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<GredAccessesPerThreadInBlock, BlockSize, compType, true, opReduce, nanPropaOpt>;
+    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<GredAccessesPerThreadInBlock, BlockSize, true, opReduce, nanPropaOpt>;
 
     static constexpr auto I0 = Number<0>{}; 
 

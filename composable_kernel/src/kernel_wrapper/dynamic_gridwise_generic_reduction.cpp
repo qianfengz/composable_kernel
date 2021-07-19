@@ -339,7 +339,7 @@ __device__ static inline void gridwise_generic_reduce_pad_and_store(ReductionMet
 }; 
 
 extern "C" __global__ void gridwise_generic_reduce_1_prepare(int reduceImpl, int GridSize, int BlkGroupSize,  
-		                                             const size_t *srcLengths, const size_t *srcStrides, const size_t *dstLengths, const size_t *dstStrides, 
+		                                             const size_t * __restrict__ srcLengths, const size_t *srcStrides, const size_t *dstLengths, const size_t *dstStrides, 
 		                                             void *p_src2dDesc, void *p_dst1dDesc, bool *p_src_use_padding, bool *p_dst_use_padding)
 {
      const auto tupleSrcLengths = make_tuple_from_array(srcLengths, Number<srcDims>{});
@@ -406,7 +406,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int reduceImpl, int
 
 
 extern "C" __global__ void gridwise_generic_reduce_2_prepare(int reduceImpl2, int GridSize, int BlkGroupSize, 
-	                                                     const size_t *srcLengths, const size_t *srcStrides, const size_t *dstLengths, const size_t *dstStrides, 
+	                                                     const size_t * __restrict__ srcLengths, const size_t *srcStrides, const size_t *dstLengths, const size_t *dstStrides, 
 		                                             void *p_src2dDesc, void *p_dst1dDesc, bool *p_src_use_padding, bool *p_dst_use_padding)
 {
       const auto tupleDstLengths = make_tuple_from_array(dstLengths, Number<dstDims>{});
@@ -552,12 +552,12 @@ struct get_ref_desc_types<true, srcDims, dstDims, invariantDims, toReduceDims>
 extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origReduceLen, int BlkGroupSize, const void __CONSTANT__ *p_src2dDesc, const void __CONSTANT__ *p_dst1dDesc,
 	                                             const bool *p_src_use_padding, const bool *p_dst_use_padding,
 		                                     float alpha,
-                                                     const void* p_src_global,
+                                                     const void* __restrict__ p_src_global,
                                                      float beta,
-                                                     void* p_dst_global,
-                                                     void* ws_buf1_global,
+                                                     void* __restrict__ p_dst_global,
+                                                     void* __restrict__ ws_buf1_global,
                                                      size_t ws_buf2_bytes_offset,
-                                                     void* indices_global)
+                                                     void* __restrict__ indices_global)
 {
       using refType_src2dDesc = typename get_ref_desc_types<reduceAllDims, srcDims, dstDims, invariantDims, toReduceDims>::refType_src2dDesc; 
       using refType_dst1dDesc = typename get_ref_desc_types<reduceAllDims, srcDims, dstDims, invariantDims, toReduceDims>::refType_dst1dDesc; 
@@ -704,15 +704,15 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
       };
 };
 
-extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origReduceLen, int BlkGroupSize, const void *p_src2dDesc, const void *p_dst1dDesc, 
+extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origReduceLen, int BlkGroupSize, const void __CONSTANT__ *p_src2dDesc, const void __CONSTANT__ *p_dst1dDesc, 
 		                                     const bool *p_src_use_padding, const bool *p_dst_use_padding,
 		                                     float alpha,
-                                                     const void* p_src_global,
+                                                     const void* __restrict__ p_src_global,
                                                      float beta,
-                                                     void* p_dst_global,
-                                                     void* ws_buf1_global,
+                                                     void* __restrict__ p_dst_global,
+                                                     void* __restrict__ ws_buf1_global,
                                                      size_t ws_buf2_bytes_offset,
-                                                     void* indices_global)
+                                                     void* __restrict__ indices_global)
 {
     constexpr auto ref_tupleDstLengths = make_tuple_from_seq(typename uniform_sequence_gen<dstDims, 8>::type{}); 
     constexpr auto ref_dstDesc = make_dynamic_naive_tensor_descriptor_packed_v2(ref_tupleDstLengths); 

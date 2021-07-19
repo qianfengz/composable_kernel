@@ -27,9 +27,9 @@
 #define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_WARPWISE_HPP
 
 #include "float_type.hpp"
-#include "dynamic_reduction_operator.hpp"
-#include "dynamic_reduction_functions.hpp"
 #include "reduction_common.hpp"
+#include "dynamic_reduction_operator.hpp"
+#include "dynamic_reduction_functions_warpwise.hpp"
 
 #include "threadwise_dynamic_tensor_slice_transfer.hpp"
 
@@ -57,7 +57,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
 
-    using warpwise_reduce = WarpReduce<compType, BlockSize, GredAccessesPerThreadInWarp, opReduce, nanPropaOpt>;
+    using warpwise_reduce = WarpReduce<BlockSize, GredAccessesPerThreadInWarp, opReduce, nanPropaOpt>;
 
     static constexpr auto I0 = Number<0>{}; 
 
@@ -133,7 +133,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
             warpwise_reduce::operate_on_elements(preUnaryOp, in_thread_buf);
 
             // do the warp-wise reduction on data of all thread buffers
-            warpwise_reduce::Reduce(in_thread_buf, accuValue_buf(I0));
+            //warpwise_reduce::Reduce(in_thread_buf, accuValue_buf(I0));
 
             threadwise_src_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
@@ -170,6 +170,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
                 accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf(I0) * beta);
             }
 
+            PRINT_MSG("warpwise reduction before storing");  
+
             auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
                                                                    dstDataType,
@@ -185,6 +187,8 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
 
             threadwise_dst_store.Run(ReducedDataDesc, make_tuple(I0), accuValue_buf, dst1dDesc, dst_global_buf);
+
+            PRINT_MSG_RET("warpwise reduction after storing");  
         }
     };
 

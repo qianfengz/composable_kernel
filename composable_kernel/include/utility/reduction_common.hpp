@@ -105,7 +105,6 @@ struct float_equal_zero
     {                                                  \
         if (hipBlockIdx_x == 0 && hipThreadIdx_x == 0) \
             printf(msg);                               \
-        __syncthreads();                               \	
     }
 
 #define PRINT_MSG_RET(msg)                             \

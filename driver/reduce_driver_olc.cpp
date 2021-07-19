@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
     NanPropagation_t nanPropaOpt = NanPropagation_t::NOT_PROPAGATE_NAN;
     ReduceTensorIndices_t reduceIndiceOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES; 
 
-    std::vector<size_t> inLengths = {64L, 3L, 256L, 64L}; 
+    std::vector<size_t> inLengths = {8L, 3L, 256L, 64L}; 
     std::vector<int> invariantDims = {1, 2, 3};  
     std::vector<int> toReduceDims = {0}; 
 
