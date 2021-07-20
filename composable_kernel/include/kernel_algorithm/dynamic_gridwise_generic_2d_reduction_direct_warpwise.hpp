@@ -134,7 +134,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
             warpwise_reduce::operate_on_elements(preUnaryOp, in_thread_buf);
 
             // do the warp-wise reduction on data of all thread buffers
-            //warpwise_reduce::Reduce(in_thread_buf, accuValue_buf(I0));
+            warpwise_reduce::Reduce(in_thread_buf, accuValue_buf(I0));
 
             threadwise_src_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
