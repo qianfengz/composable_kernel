@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
     NanPropagation_t nanPropaOpt = NanPropagation_t::NOT_PROPAGATE_NAN;
     ReduceTensorIndices_t reduceIndiceOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES; 
 
-    std::vector<size_t> inLengths = {8L, 3L, 256L, 64L}; 
+    std::vector<size_t> inLengths = {64L, 3L, 280L, 81L}; 
     std::vector<int> invariantDims = {1, 2, 3};  
     std::vector<int> toReduceDims = {0}; 
 
@@ -104,27 +104,29 @@ int main(int argc, char* argv[])
         {
         case 0:
             in.GenerateTensorValue(GeneratorTensor_1{}, num_thread);
+	    if ( beta != 0.0f ) 
+                 out_host.GenerateTensorValue(GeneratorTensor_1{}, num_thread);
             break;
         case 1:
-            in.GenerateTensorValue(GeneratorTensor_1{}, num_thread);
-            break;
-        case 2:
             in.GenerateTensorValue(GeneratorTensor_2{-5, 5}, num_thread);
-            break;
-        case 3:
-            in.GenerateTensorValue(GeneratorTensor_2{-5, 5}, num_thread);
+            if ( beta != 0.0f ) 
+                 out_host.GenerateTensorValue(GeneratorTensor_2{-5, 5}, num_thread);
             break;
         default:
             in.GenerateTensorValue(GeneratorTensor_2{1, 5}, num_thread);
+            if ( beta != 0.0f ) 
+                 out_host.GenerateTensorValue(GeneratorTensor_2{1, 5}, num_thread);
         }
+
+        if ( beta != 0.0f ) 
+             for (size_t i=0; i < out_host.mDesc.GetElementSpace(); i++)
+                  out_device.mData[i] = out_host.mData[i];
     }
 
     tunable_dyn_generic_reduction* tunable = &default_tunable_dyn_generic_reduction;
 
-
     device_dynamic_generic_reduction_olc<srcDataType, compType, dstDataType>(handle, invariantDims, toReduceDims, in, out_device, reduceOp, nanPropaOpt, reduceIndiceOpt, alpha,  beta,  tunable, nrepeat);
 
-    
     if(do_verification)
     {
         ReductionHost<srcDataType, dstDataType> hostReduce(reduceOp,  compTypeId, nanPropaOpt, reduceIndiceOpt, in.mDesc, out_host.mDesc, invariantDims, toReduceDims);  

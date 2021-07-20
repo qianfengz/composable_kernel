@@ -263,6 +263,9 @@ void device_dynamic_generic_reduction_olc(
     DeviceMem out_dev_buf(sizeof(TDst) * out.mDesc.GetElementSpace());
 
     in_dev_buf.ToDevice(in.mData.data()); 
+   
+    if ( beta != 0.0f )
+	 out_dev_buf.ToDevice(out.mData.data());  
 
     auto inLengths = in.mDesc.GetLengths(); 
     auto inStrides = in.mDesc.GetStrides(); 

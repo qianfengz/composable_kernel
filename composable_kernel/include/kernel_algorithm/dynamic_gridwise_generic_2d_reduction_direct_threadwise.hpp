@@ -164,7 +164,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
             threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 
-            accuValue_buf(I0) *= type_convert<compType>{}(priorDstValue_buf[I0] * beta);
+            accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf[I0] * beta);
         }
 
         auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
