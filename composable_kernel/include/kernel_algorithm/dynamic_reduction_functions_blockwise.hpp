@@ -107,7 +107,7 @@ struct BlockwiseReduction_2d_block_buffer
         compType lAccuData                = opReduce::GetZeroVal();
         int lAccuIndex = 0;
 
-        static_if<blockIsOneRow>{}([&](auto) {
+        if constexpr(blockIsOneRow) {	
             for(index_t otherDimInd = 0; otherDimInd < toReduceBlocks; otherDimInd++)
             {
                 for(index_t indOffset = 1; indOffset < BlockSize; indOffset *= 2)
@@ -144,7 +144,8 @@ struct BlockwiseReduction_2d_block_buffer
 
                 binop::calculate(accuData, lAccuData, accuIndex, lAccuIndex);
             }
-        }).Else([&](auto) {
+	} 
+	else {
             index_t offset;
 
             for(index_t otherDimInd = 0; otherDimInd < toReduceBlocks; otherDimInd++)
@@ -190,7 +191,7 @@ struct BlockwiseReduction_2d_block_buffer
 
                 binop::calculate(accuData, tmpVal, accuIndex, tmpIndex);
             }
-        });
+	};
     };
 
     template <typename BufferType> 

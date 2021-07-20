@@ -69,13 +69,14 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
                         const int* const __restrict__ ws_indices_global,
                         int* const __restrict__ indices_global)
     {
-        static_if<need_indices>{}([&](auto) {
-            static_if<isFirstCall>{}([&](auto) {
+        if constexpr(need_indices) {	
+            if constexpr(isFirstCall) 
                 RunImpl2(src2dDesc, dst1dDesc, origReduceLen,  alpha, p_src_global, beta, p_dst_global, indices_global);
-            }).Else([&](auto) {
+	    else
                 RunImpl3(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, ws_indices_global, indices_global); 
-            });
-        }).Else([&](auto) { RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global); });
+        }	
+	else
+            RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global);
     };
 
     __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
@@ -170,8 +171,6 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
                 accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf(I0) * beta);
             }
 
-            PRINT_MSG("warpwise reduction before storing");  
-
             auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
                                                                    dstDataType,
@@ -187,8 +186,6 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
 
 
             threadwise_dst_store.Run(ReducedDataDesc, make_tuple(I0), accuValue_buf, dst1dDesc, dst_global_buf);
-
-            PRINT_MSG_RET("warpwise reduction after storing");  
         }
     };
 

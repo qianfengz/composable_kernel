@@ -71,13 +71,14 @@ struct GridwiseReduction_xy_to_x_blockwise
                         const int* const __restrict__ ws_indices_global,
                         int* const __restrict__ indices_global)
     {
-        static_if<need_indices>{}([&](auto) {
-            static_if<isFirstCall>{}([&](auto) {
+        if constexpr(need_indices) {	
+            if constexpr(isFirstCall) 
                 RunImpl2(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, indices_global);
-            }).Else([&](auto) {
+	    else
                 RunImpl3(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, ws_indices_global, indices_global);
-            });
-        }).Else([&](auto) { RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global); });
+	}
+	else
+            RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global);
     };
 
     __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen,

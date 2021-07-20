@@ -264,26 +264,24 @@ void device_dynamic_generic_reduction_olc(
 
     in_dev_buf.ToDevice(in.mData.data()); 
 
-    printf("output pointer = %lx\n", (unsigned long)out_dev_buf.GetDeviceBuffer()); 
-
     auto inLengths = in.mDesc.GetLengths(); 
     auto inStrides = in.mDesc.GetStrides(); 
     auto outLengths = out.mDesc.GetLengths(); 
     auto outStrides = out.mDesc.GetStrides(); 
 
-    std::vector<size_t> lens_buf(4096/sizeof(size_t));   // allocate one page  
+    std::vector<index_t> lens_buf(4096/sizeof(index_t));   // allocate one page  
 
     for (int i=0; i < inLengths.size(); i++) 
-         lens_buf[0+i] = inLengths[i]; 
+         lens_buf[0+i] = static_cast<index_t>(inLengths[i]); 
 
     for (int i=0; i < inStrides.size(); i++) 
-         lens_buf[6+i] = inStrides[i]; 
+         lens_buf[6+i] = static_cast<index_t>(inStrides[i]); 
 
     for (int i=0; i < outLengths.size(); i++) 
-         lens_buf[12+i] = outLengths[i]; 
+         lens_buf[12+i] = static_cast<index_t>(outLengths[i]); 
 
     for (int i=0; i < outStrides.size(); i++)
-	 lens_buf[18+i] = outStrides[i]; 
+	 lens_buf[18+i] = static_cast<index_t>(outStrides[i]); 
 
     auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
 
@@ -301,12 +299,10 @@ void device_dynamic_generic_reduction_olc(
     void *p_dev_dst1dDesc = (char *)workspace2.GetDeviceBuffer() + 2048;
     bool *p_dev_src_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 ); 
     bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 + sizeof(size_t) ); 
-    size_t *p_dev_inLengths = (size_t*)workspace2.GetDeviceBuffer(); 
-    size_t *p_dev_inStrides = &p_dev_inLengths[6]; 
-    size_t *p_dev_outLengths = &p_dev_inLengths[12]; 
-    size_t *p_dev_outStrides = &p_dev_inLengths[18]; 
-
-    size_t *p_dev_desc_lengths = reinterpret_cast<size_t *>( (char *)workspace2.GetDeviceBuffer() + 4000 ); 
+    index_t *p_dev_inLengths = (index_t *)workspace2.GetDeviceBuffer(); 
+    index_t *p_dev_inStrides = &p_dev_inLengths[6]; 
+    index_t *p_dev_outLengths = &p_dev_inLengths[12]; 
+    index_t *p_dev_outStrides = &p_dev_inLengths[18]; 
 
     workspace2.ToDevice(static_cast<const void*>(lens_buf.data()));  
 
@@ -318,8 +314,8 @@ void device_dynamic_generic_reduction_olc(
 
     if(need_indices && workspace_size > 0)
     {
-        long byteOffset =
-            static_cast<long>((wsSizeInBytes / (sizeof(TSrc) + sizeof(int))) * sizeof(TSrc));
+        size_t byteOffset =
+            static_cast<size_t>((wsSizeInBytes / (sizeof(TSrc) + sizeof(int))) * sizeof(TSrc));
 
         ws_buf2_bytes_offset = ((byteOffset + 63) / 64) * 64;
     };
@@ -397,8 +393,6 @@ void device_dynamic_generic_reduction_olc(
         handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), GridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
-
-        std::cout << "Prepare_1 called, to call reduce_1 " << std::endl; 
 
         kernel_name           = "gridwise_generic_reduce_1";
         auto network_config_2 = network_config + "_2";

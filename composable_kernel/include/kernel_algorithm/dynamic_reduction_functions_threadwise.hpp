@@ -47,8 +47,8 @@ struct ThreadReduce
     // This interface does not accumulate on indices
     __device__ static void Reduce(const BufferType &thread_buffer, compType& accuData)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            binop::calculate(accuData, thread_buffer[Number<i>{}]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            binop::calculate(accuData, thread_buffer[I]);
         } );
     };
 
@@ -57,9 +57,9 @@ struct ThreadReduce
     __device__ static void
     Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            int currIndex    = i + indexStart;
-            binop::calculate(accuData, thread_buffer[Number<i>{}], accuIndex, currIndex);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            int currIndex    = I + indexStart;
+            binop::calculate(accuData, thread_buffer[I], accuIndex, currIndex);
         } );
     };
 
@@ -70,16 +70,16 @@ struct ThreadReduce
                                    compType& accuData,
                                    int& accuIndex)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            binop::calculate(accuData, thread_buffer[Number<i>{}], accuIndex, thread_indices_buffer[Number<i>{}]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            binop::calculate(accuData, thread_buffer[I], accuIndex, thread_indices_buffer[I]);
         } );
     };
 
     // Set the elements in the per-thread buffer to a specific value
     __device__ static void set_buffer_value(BufferType &thread_buffer, compType value)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            thread_buffer(Number<i>{}) = value;
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            thread_buffer(I) = value;
         } );	
     };
 
@@ -87,8 +87,8 @@ struct ThreadReduce
     template <typename unary_op_type>
     __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            unary_op(thread_buffer(Number<i>{}));
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            unary_op(thread_buffer(I));
         } ); 	
     };
 };

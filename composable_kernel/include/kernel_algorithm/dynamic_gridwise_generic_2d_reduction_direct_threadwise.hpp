@@ -71,13 +71,14 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                         const int* const __restrict__ ws_indices_global,
                         int* const __restrict__ indices_global)
     {
-        static_if<need_indices>{}([&](auto) {
-            static_if<isFirstCall>{}([&](auto) {
+        if constexpr(need_indices) {	
+            if constexpr(isFirstCall) 	
                 RunImpl2(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, indices_global);
-            }).Else([&](auto) {
+            else
                 RunImpl3(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, ws_indices_global, indices_global);
-            });
-        }).Else([&](auto) { RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global); });
+	}
+        else
+            RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global);
     };
 
     __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen,
@@ -86,18 +87,11 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global)
     {
-        PRINT_MSG("Call to RunImpl1 of direct_threadwise\n"); 
-
-        if (hipThreadIdx_x == 0 && hipBlockIdx_x == 0) {
-            printf("out pointer = %lx\n", (unsigned long)p_dst_global); 
-            printf("dst1dDesc space size = %d\n", dst1dDesc.GetElementSpaceSize()); 
-	}; 
-
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
         auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
 	typename threadwise_reduce::BufferType in_thread_buf; 
-        StaticBuffer<AddressSpace::Vgpr, compType, 4> accuValue_buf;
+        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal       = opReduce::GetZeroVal();
 
@@ -105,10 +99,6 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
         const int divider = origReduceLen;
-
-        if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 ) {
-             printf("threadbuffer_length = %d, toRedueLength = %d\n", GredThreadBufferLength, toReduceLength); 
-	}; 
 
         const preUnaryOpType preUnaryOp(divider); 
 	const posUnaryOpType posUnaryOp(divider); 
@@ -149,13 +139,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             threadwise_src_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
         }
 
-        if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 ) {
-             printf("accumulated value : %f\n", type_convert<float>{}(accuValue_buf(I0))); 
-	}; 
-
-        PRINT_MSG("thread wise reduction finished\n"); 
-
-        //posUnaryOp(accuValue_buf(I0));
+        posUnaryOp(accuValue_buf(I0));
 
         constexpr auto ReducedDataDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}));
 
@@ -183,9 +167,6 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             accuValue_buf(I0) *= type_convert<compType>{}(priorDstValue_buf[I0] * beta);
         }
 
-        PRINT_MSG("thread wise reduction before storing\n"); 
-
-/*	
         auto threadwise_dst_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
                                                                    dstDataType,
@@ -200,12 +181,6 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    true>(dst1dDesc, make_multi_index(thread_global_1d_id));
 									   
 	threadwise_dst_store.Run(ReducedDataDesc, make_tuple(I0), accuValue_buf, dst1dDesc, dst_global_buf);
-*/
-
-        if ( hipThreadIdx_x == 0 ) 
-	     p_dst_global[thread_global_1d_id] = accuValue_buf[I0]; 
-
-        PRINT_MSG_RET("thread wise reduction after storing\n"); 
     };
 
     __device__ static void RunImpl2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 

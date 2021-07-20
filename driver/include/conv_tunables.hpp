@@ -136,6 +136,6 @@ struct tunable_dyn_generic_reduction
     ck::index_t GredAccessesPerThreadInWarp;
 }; 
 
-static struct tunable_dyn_generic_reduction default_tunable_dyn_generic_reduction = {256, 8, 2, 2}; 
+static struct tunable_dyn_generic_reduction default_tunable_dyn_generic_reduction = {256, 4, 2, 2}; 
 
 #endif

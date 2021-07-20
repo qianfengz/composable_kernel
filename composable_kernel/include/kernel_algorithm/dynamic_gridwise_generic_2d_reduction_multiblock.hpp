@@ -66,9 +66,10 @@ struct GridwiseReduction_xy_to_x_multiblock
                         srcDataType* const __restrict__ workspace_global,
                         int* const __restrict__ ws_indices_global)
     {
-        static_if<need_indices>{}([&](auto) {
+        if constexpr(need_indices) 	
             RunImpl2(src2dDesc, dst1dDesc, origReduceLen, BlkGroupSize, alpha, p_src_global, beta, workspace_global, ws_indices_global);
-        }).Else([&](auto) { RunImpl1(src2dDesc, dst1dDesc, origReduceLen, BlkGroupSize, alpha, p_src_global, beta, workspace_global); });
+	else
+	    RunImpl1(src2dDesc, dst1dDesc, origReduceLen, BlkGroupSize, alpha, p_src_global, beta, workspace_global); 
     };
 
     __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,

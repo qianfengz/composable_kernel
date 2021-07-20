@@ -121,14 +121,14 @@ static_assert(invariantDims::Size() > 0 || dstDims == 1, "If all source dimensio
 
 constexpr bool reduceAllDims = (invariantDims::Size() == 0) ? true : false; 
 
-template <typename DataType, index_t... Ns>
-__device__ static auto make_tuple_from_array_and_index_seq(const DataType *lengths, Sequence<Ns...>)
+template <index_t... Ns>
+__device__ static auto make_tuple_from_array_and_index_seq(const index_t *lengths, Sequence<Ns...>)
 {
-    return make_tuple(static_cast<index_t>(lengths[Ns])...);
+    return make_tuple(lengths[Ns]...);
 };
 
-template <typename DataType, index_t arraySize>
-__device__ static auto make_tuple_from_array(const DataType *lengths, Number<arraySize>)
+template <index_t arraySize>
+__device__ static auto make_tuple_from_array(const index_t *lengths, Number<arraySize>)
 {
    static_assert(arraySize >=1 && arraySize <= 6, "The tensor should have 1 to 6 dimensions"); 
 
@@ -137,10 +137,10 @@ __device__ static auto make_tuple_from_array(const DataType *lengths, Number<arr
    return make_tuple_from_array_and_index_seq(lengths, index_seq); 
 }; 
 
-template <typename DataType, index_t... Ids>
-__device__ static auto make_passthrough_tuple_from_array_and_index_seq(const DataType *lengths, Sequence<Ids...>)
+template <index_t... Ids>
+__device__ static auto make_passthrough_tuple_from_array_and_index_seq(const index_t *lengths, Sequence<Ids...>)
 {
-    return make_tuple(make_pass_through_transform(static_cast<index_t>(lengths[Ids]))...);
+    return make_tuple(make_pass_through_transform(lengths[Ids])...);
 };
 
 template <index_t... Ns>
@@ -207,18 +207,12 @@ __device__ static inline void gridwise_generic_reduce_pad_and_store(ReductionMet
 		            *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2; 
 		            *p_dst_use_padding = true; 
 		       }; 
-
-		       if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 )
-			    printf(" prepared dst1dDesc size : %d\n", sizeof(dst1dDesc_2));  
                   }
 		  else {
                        if ( hipThreadIdx_x == 0 ) {
 		            *static_cast<dst1dDescType*>(p_dst1dDesc) = dst1dDesc; 
 		            *p_dst_use_padding = false; 
 		       }; 
-
-		       if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 )
-			    printf(" prepared dst1dDesc size : %d\n", sizeof(dst1dDesc));  
 		  }; 
 	      }; 	 
 	      break; 
@@ -334,12 +328,10 @@ __device__ static inline void gridwise_generic_reduce_pad_and_store(ReductionMet
               };	      
 	      break;
      }; 
-
-     PRINT_MSG("Write the descriptors and padding flags to globl memory\n");
 }; 
 
 extern "C" __global__ void gridwise_generic_reduce_1_prepare(int reduceImpl, int GridSize, int BlkGroupSize,  
-		                                             const size_t * __restrict__ srcLengths, const size_t *srcStrides, const size_t *dstLengths, const size_t *dstStrides, 
+		                                             const index_t * __restrict__ srcLengths, const index_t *srcStrides, const index_t *dstLengths, const index_t *dstStrides, 
 		                                             void *p_src2dDesc, void *p_dst1dDesc, bool *p_src_use_padding, bool *p_dst_use_padding)
 {
      const auto tupleSrcLengths = make_tuple_from_array(srcLengths, Number<srcDims>{});
@@ -406,7 +398,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int reduceImpl, int
 
 
 extern "C" __global__ void gridwise_generic_reduce_2_prepare(int reduceImpl2, int GridSize, int BlkGroupSize, 
-	                                                     const size_t * __restrict__ srcLengths, const size_t *srcStrides, const size_t *dstLengths, const size_t *dstStrides, 
+	                                                     const index_t * __restrict__ srcLengths, const index_t *srcStrides, const index_t *dstLengths, const index_t *dstStrides, 
 		                                             void *p_src2dDesc, void *p_dst1dDesc, bool *p_src_use_padding, bool *p_dst_use_padding)
 {
       const auto tupleDstLengths = make_tuple_from_array(dstLengths, Number<dstDims>{});
@@ -565,15 +557,8 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
       using refType_src2dDesc_padded_34 = typename get_ref_desc_types<reduceAllDims, srcDims, dstDims, invariantDims, toReduceDims>::refType_src2dDesc_padded_34; 
       using refType_dst1dDesc_padded = typename get_ref_desc_types<reduceAllDims, srcDims, dstDims, invariantDims, toReduceDims>::refType_dst1dDesc_padded; 
 
-      if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 )
-	   printf("sizeof dst1dDesc %d\n", sizeof(refType_dst1dDesc)); 
-
-      PRINT_MSG("Before copying the paddding flags\n");
-
       const bool src_use_padding = *p_src_use_padding; 
       const bool dst_use_padding = *p_dst_use_padding; 
-
-      PRINT_MSG("Before copying the src2d/dst1d descriptors\n");
 
       const auto gridwise_reduce = Gridwise2dReduction<BlockSize,
                                                        srcDataType,
@@ -591,8 +576,6 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
                  const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded_12 *>((const void *)p_src2dDesc);
                  const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded *>((const void *)p_dst1dDesc);
 
-		 PRINT_MSG("Call reduce_1 with  1 1 padding\n"); 
-
                  gridwise_reduce.Run(src2dDesc, dst1dDesc,
                                      alpha,
                                      const_cast<const void* const __restrict__>(p_src_global),
@@ -605,8 +588,6 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
            else if ( src_use_padding && !dst_use_padding ) {
                      const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded_12 *>((const void *)p_src2dDesc);
                      const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc *>((const void *)p_dst1dDesc);
-
-		     PRINT_MSG("Call reduce_1 with  1 0 padding\n"); 
 
                      gridwise_reduce.Run(src2dDesc, dst1dDesc, 
                                          alpha,
@@ -621,8 +602,6 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
                      const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc *>((const void *)p_src2dDesc);
                      const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded *>((const void *)p_dst1dDesc);
 
-		     PRINT_MSG("Call reduce_1 with 0 1 padding\n"); 
-
                      gridwise_reduce.Run(src2dDesc, dst1dDesc, 
                                          alpha,
                                          const_cast<const void* const __restrict__>(p_src_global),
@@ -635,8 +614,6 @@ extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origRed
            else if ( !src_use_padding && !dst_use_padding ) {
                      const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc *>((const void *)p_src2dDesc);
                      const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc *>((const void *)p_dst1dDesc);
-
-		     PRINT_MSG("Call reduce_1 with 0 0 padding\n"); 
 
                      gridwise_reduce.Run(src2dDesc, dst1dDesc, 
                                          alpha,

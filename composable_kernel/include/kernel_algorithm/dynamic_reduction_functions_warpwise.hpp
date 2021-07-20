@@ -51,9 +51,10 @@ struct WarpReduce
     // This interface does not accumulate on indices
     __device__ static void Reduce(const BufferType &thread_buffer, compType& accuData)
     {
-        static_if<have_builtin_shuffle>{}([&](auto) {
+        if constexpr(have_builtin_shuffle) 	
             ReduceImpl1(thread_buffer, accuData);
-        }).Else([&](auto) { ReduceImpl2(thread_buffer, accuData); });
+	else 
+	    ReduceImpl2(thread_buffer, accuData);
     };
 
     // This interface implementation uses HIP built-in device shuffling functions
@@ -61,8 +62,8 @@ struct WarpReduce
     {
         compType lAccuData = opReduce::GetZeroVal();
 
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            binop::calculate(lAccuData, thread_buffer[Number<i>{}]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            binop::calculate(lAccuData, thread_buffer[I]);
         } ); 
 
         // synchronize among all threads in this warp
@@ -84,8 +85,8 @@ struct WarpReduce
     {
         compType lAccuData = opReduce::GetZeroVal();
 
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            binop::calculate(lAccuData, thread_buffer[Number<i>{}]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            binop::calculate(lAccuData, thread_buffer[I]);
         } ); 
 
         __syncthreads();
@@ -125,9 +126,10 @@ struct WarpReduce
     __device__ static void
     Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
     {
-        static_if<have_builtin_shuffle>{}([&](auto) {
+        if constexpr(have_builtin_shuffle) 	
             Reduce2Impl1(thread_buffer, accuData, accuIndex, indexStart);
-        }).Else([&](auto) { Reduce2Impl2(thread_buffer, accuData, accuIndex, indexStart); });
+	else 
+	    Reduce2Impl2(thread_buffer, accuData, accuIndex, indexStart);
     };
 
     // This interface implementation uses HIP built-in device shuffling functions
@@ -137,9 +139,9 @@ struct WarpReduce
         int lAccuIndex           = 0;
         index_t thread_inwarp_id = get_thread_local_1d_id() % warpSize;
 
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            int currIndex    = thread_inwarp_id * ThreadBufferLen + i + indexStart;
-            binop::calculate(lAccuData, thread_buffer[Number<i>{}], lAccuIndex, currIndex);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            int currIndex    = thread_inwarp_id * ThreadBufferLen + I + indexStart;
+            binop::calculate(lAccuData, thread_buffer[I], lAccuIndex, currIndex);
         } );
 
         // synchronize among all threads in this warp
@@ -168,9 +170,9 @@ struct WarpReduce
         index_t warpId           = thread_id / warpSize;
         index_t thread_inwarp_id = thread_id % warpSize;
 
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            int currIndex    = thread_inwarp_id * ThreadBufferLen + i + indexStart;
-            binop::calculate(lAccuData, thread_buffer[Number<i>{}], lAccuIndex, currIndex);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            int currIndex    = thread_inwarp_id * ThreadBufferLen + I + indexStart;
+            binop::calculate(lAccuData, thread_buffer[I], lAccuIndex, currIndex);
         } ); 
 
         __shared__ compType shuffle_data_buffer[BlockSize];
@@ -205,15 +207,12 @@ struct WarpReduce
 
     // This interface accumulates on both data values and indices and
     // is called by Direct_WarpWise reduction method at second-time reduction
-    __device__ static void Reduce3(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer,
-                                   compType& accuData,
-                                   int& accuIndex)
+    __device__ static void Reduce3(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
     {
-        static_if<have_builtin_shuffle>{}([&](auto) {
+        if constexpr(have_builtin_shuffle) 	
             Reduce3Impl1(thread_buffer, thread_indices_buffer, accuData, accuIndex);
-        }).Else([&](auto) {
+	else
             Reduce3Impl2(thread_buffer, thread_indices_buffer, accuData, accuIndex);
-        });
     };
 
     // This interface implementation uses HIP built-in device shuffling functions
@@ -222,8 +221,8 @@ struct WarpReduce
         compType lAccuData = opReduce::GetZeroVal();
         int lAccuIndex     = 0;
 
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            binop::calculate(lAccuData, thread_buffer[Number<i>{}], lAccuIndex, thread_indices_buffer[Number<i>{}]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            binop::calculate(lAccuData, thread_buffer[I], lAccuIndex, thread_indices_buffer[I]);
         } ); 
 
         // synchronize among all threads in this warp
@@ -251,8 +250,8 @@ struct WarpReduce
         index_t warpId           = thread_id / warpSize;
         index_t thread_inwarp_id = thread_id % warpSize;
 
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            binop::calculate(lAccuData, thread_buffer[Number<i>{}], lAccuIndex, thread_indices_buffer[Number<i>{}]);
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            binop::calculate(lAccuData, thread_buffer[I], lAccuIndex, thread_indices_buffer[I]);
         } ); 
 
         __shared__ compType shuffle_data_buffer[BlockSize];
@@ -288,8 +287,8 @@ struct WarpReduce
     template <typename BufferType>
     __device__ static void set_buffer_value(BufferType &thread_buffer, compType value)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            thread_buffer(Number<i>{}) = value;
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            thread_buffer(Number<I>{}) = value;
         } ); 	
 
         __all(1);
@@ -299,8 +298,8 @@ struct WarpReduce
     template <typename unary_op_type, typename BufferType>
     __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto i) {		
-            unary_op(thread_buffer(Number<i>{}));
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            unary_op(thread_buffer(I));
         } ); 	
 
         __all(1);

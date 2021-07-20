@@ -194,10 +194,8 @@ class ReductionHost
         {
             std::vector<std::vector<size_t>> indexes_1, indexes_2;
 
-            get_all_indexes(
-                this->invariantLengths, 0, indexes_1); // generate the invariant indexes space
-            get_all_indexes(
-                this->toReduceLengths, 0, indexes_2); // generate the toReduce indexes space
+            get_all_indexes( this->invariantLengths, 0, indexes_1); // generate the invariant indexes space
+            get_all_indexes( this->toReduceLengths, 0, indexes_2);  // generate the toReduce indexes space
 
             // go through indexes of the invariant dimensions
             for(const auto& index_1 : indexes_1)
@@ -206,19 +204,15 @@ class ReductionHost
                 std::vector<int> dst_index;
 
                 src_index.resize(this->inLengths.size());
-                dst_index.resize(this->inLengths.size());
-
-                // initialize the src index
-                std::fill(dst_index.begin(), dst_index.end(), 0);
-
-                for(int k                       = 0; k < invariantDims.size(); k++)
-                    dst_index[invariantDims[k]] = index_1[k];
-
-                int dst_offset = get_offset_from_index(this->outStrides, dst_index);
 
                 // generate the part of src index belonging to invariant dims
-                for(int k                       = 0; k < invariantDims.size(); k++)
+                for(int k = 0; k < invariantDims.size(); k++)
                     src_index[invariantDims[k]] = index_1[k];
+
+                for(int k  = 0; k < invariantDims.size(); k++)
+                    dst_index.push_back(index_1[k]);
+
+                int dst_offset = get_offset_from_index(this->outStrides, dst_index);
 
                 compType accuVal = ReduceOpZeroVal<compType>(this->reduceOp);
                 int accuIndex    = 0;
@@ -227,7 +221,7 @@ class ReductionHost
                 for(const auto& index_2 : indexes_2)
                 {
                     // generate the part of src index belonging to toReduce dims
-                    for(int k                      = 0; k < toReduceDims.size(); k++)
+                    for(int k = 0; k < toReduceDims.size(); k++)
                         src_index[toReduceDims[k]] = index_2[k];
 
                     auto src_offset = get_offset_from_index(this->inStrides, src_index);
@@ -316,10 +310,8 @@ class ReductionHost
         {
             std::vector<std::vector<size_t>> indexes_1, indexes_2;
 
-            get_all_indexes(
-                this->invariantLengths, 0, indexes_1); // generate the invariant indexes space
-            get_all_indexes(
-                this->toReduceLengths, 0, indexes_2); // generate the toReduce indexes space
+            get_all_indexes(this->invariantLengths, 0, indexes_1); // generate the invariant indexes space
+            get_all_indexes(this->toReduceLengths, 0, indexes_2); // generate the toReduce indexes space
 
             // go through indexes of the invariant dimensions
             for(const auto& index_1 : indexes_1)
@@ -328,18 +320,14 @@ class ReductionHost
                 std::vector<int> dst_index;
 
                 src_index.resize(this->inLengths.size());
-                dst_index.resize(this->inLengths.size());
 
-                // initialize the src index
-                std::fill(dst_index.begin(), dst_index.end(), 0);
-
-                for(int k                       = 0; k < invariantDims.size(); k++)
-                    dst_index[invariantDims[k]] = index_1[k];
+                for(int k  = 0; k < invariantDims.size(); k++)
+                    dst_index.push_back(index_1[k]);
 
                 int dst_offset = get_offset_from_index(this->outStrides, dst_index);
-
+		
                 // generate the part of src index belonging to invariant dims
-                for(int k                       = 0; k < invariantDims.size(); k++)
+                for(int k  = 0; k < invariantDims.size(); k++)
                     src_index[invariantDims[k]] = index_1[k];
 
                 compType accuVal = ReduceOpZeroVal<compType>(this->reduceOp);
@@ -368,8 +356,7 @@ class ReductionHost
 
                 // scale the prior dst value and add it to the accumulated value
                 if(!float_equal_zero(beta))
-                    accuVal +=
-                        convert_type<compType>(out_data[dst_offset]) * convert_type<compType>(beta);
+                    accuVal += convert_type<compType>(out_data[dst_offset]) * convert_type<compType>(beta);
 
                 // store the reduced value to dst location
                 out_data[dst_offset] = convert_type<TDst>(accuVal);
