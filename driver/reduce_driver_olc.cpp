@@ -2,8 +2,11 @@
 #include <numeric>
 #include <initializer_list>
 #include <cstdlib>
-#include <stdlib.h>
+#include <vector>
+#include <stdexcept>
 #include <half.hpp>
+#include <getopt.h>
+
 #include "config.hpp"
 #include "print.hpp"
 #include "device.hpp"
@@ -21,32 +24,243 @@
 #include "handle.hpp"
 #include "hipCheck.hpp"
 
-void check_reduce_dims(const std::vector<int> &invariantDims, const std::vector<int> &toReduceDims, const int totalDims)
+using namespace std;
+
+static struct option long_options[] = {
+                   {"inLengths", required_argument, NULL, 'D'},
+                   {"toReduceDims", required_argument, NULL, 'R'},
+                   {"reduceOp", required_argument, NULL, 'O'},
+                   {"compType", required_argument, NULL, 'C'},
+                   {"nanOpt", required_argument, NULL, 'N'},
+                   {"indicesOpt", required_argument, NULL, 'I'},
+                   {"scales", required_argument, NULL, 'S'},
+                   {"half", no_argument, NULL, '?'},
+                   {"double", no_argument, NULL, '?'},
+                   {"verify", required_argument, NULL, 'v'},
+                   {"log", required_argument, NULL, 'l'},
+                   {"help", no_argument, NULL, '?'},
+                   {0, 0, 0, 0}       };
+static int option_index=0;
+
+template <typename T>
+static T getSingleValueFromString(const string &valueStr);
+
+template <>
+int getSingleValueFromString<int>(const string &valueStr)
 {
-   auto tmpDims = invariantDims; 
+    return( std::stoi(valueStr) );
+};
 
-   if ( invariantDims.size() + toReduceDims.size() != totalDims )
-	throw std::runtime_error("Invalid number of dimensions specified for being invariant/toReduce"); 
+template <>
+size_t getSingleValueFromString<size_t>(const string &valueStr)
+{
+    return( std::stol(valueStr) );
+};
 
-   for (const auto dim :  toReduceDims)
-	tmpDims.push_back(dim); 
+template <>
+float getSingleValueFromString<float>(const string &valueStr)
+{
+    return( std::stof(valueStr) );
+};
 
-   for (const auto dim : tmpDims) {
-	if ( dim < 0 || dim >= tmpDims.size() ) 
-	     throw std::runtime_error("Invalid dimension index specified for being invariant/toReduce"); 
-   };
+template <typename T>
+static std::vector<T> getTypeValuesFromString(const char *cstr_values)
+{
+    std::string valuesStr(cstr_values);
 
-   for (int i1=0; i1 < tmpDims.size(); i1++) 
-	for (int i2=0; i2 < tmpDims.size(); i2++) { 
-             if (i1 != i2 && tmpDims[i1] == tmpDims[i2] ) 
-	         throw std::runtime_error("Repeated dimension indexes specified for being invariant/toReduce"); 
-	}; 
+    std::vector<T> values;
+    std::size_t pos = 0;
+    std::size_t new_pos;
+
+    new_pos = valuesStr.find(',', pos);
+    while(new_pos != std::string::npos)
+    {
+        const std::string sliceStr = valuesStr.substr(pos, new_pos - pos);
+
+        T val = getSingleValueFromString<T>(sliceStr);
+
+        values.push_back(val);
+
+        pos     = new_pos + 1;
+        new_pos = valuesStr.find(',', pos);
+    };
+
+    std::string sliceStr = valuesStr.substr(pos);
+    T val  = getSingleValueFromString<T>(sliceStr);
+
+    values.push_back(val);
+
+    return (values);
+}
+
+static void show_usage(const char *cmd)
+{
+    std::cout << "Usage of " << cmd << std::endl;
+    std::cout << "--inLengths or -D, comma separated list of input tensor dimension lengths" << std::endl;
+    std::cout << "--toReduceDims or -R, comma separated list of to-reduce dimensions" << std::endl;
+    std::cout << "--reduceOp or -O, enum value indicating the reduction operations" << std::endl;
+    std::cout << "--compType or -C, enum value indicating the type of accumulated values used during the reduction" << std::endl;
+    std::cout << "--nanOpt or -N, enum value indicates the selection for NanOpt" << std::endl;
+    std::cout << "--indicesOpt or -I, enum value indicates the selection for IndicesOpt" << std::endl;
+    std::cout << "--scales or -S, comma separated two float values for alpha and beta" << std::endl;
+    std::cout << "--half, use fp16 for the input and output tensor data types" << std::endl;
+    std::cout << "--double, use fp64 for the input and output tensor data types" << std::endl;
+    std::cout << "--verify or -v, 1/0 to indicate whether to verify the reduction result by comparing with the host-based reduction" << std::endl;
+    std::cout << "--log or -l, 1/0 to indicate whether to log some information" << std::endl;
+};
+
+static void check_reduce_dims(const int totalDims, const std::vector<int> &toReduceDims)
+{
+    for (const auto dim : toReduceDims) {
+	if ( dim < 0 || dim >= totalDims ) 
+	     throw std::runtime_error("Invalid dimension index specified for Reducing"); 
+    };
 }; 
+
+static vector<int> get_invariant_dims(int totalDims, const vector<int> &toReduceDims)
+{
+   vector<int> resDims; 
+   unsigned int incFlag = 0; 
+
+   for (auto dim : toReduceDims) 
+	incFlag = incFlag | (0x1 << dim); 
+
+   for (int dim=0; dim < totalDims; dim++) {
+	if ( incFlag & (0x1 << dim) ) 
+	      continue; 
+	resDims.push_back(dim); 
+   }; 
+
+   return( resDims ); 
+}; 
+
+static bool use_half=false;
+static bool use_double=false;
+
+static vector<size_t> inLengths;
+static vector<size_t> outLengths; 
+static vector<int> toReduceDims;
+static vector<int> invariantDims; 
+
+static vector<float> scales;
+
+static ReduceTensorOp_t reduceOp = ReduceTensorOp_t::REDUCE_TENSOR_ADD;
+static appDataType_t compTypeId = appFloat;
+static NanPropagation_t nanOpt = NanPropagation_t::NOT_PROPAGATE_NAN;;
+static ReduceTensorIndices_t indicesOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES;
+static bool do_logging=false;
+static bool do_verification=false;
+
+static int init_method;
+static int nrepeat;
+
+static void check_cmdline_arguments(int argc, char *argv[])
+{
+    unsigned int ch;
+
+    while (1) {
+         ch = getopt_long(argc, argv, "D:R:O:C:N:I:S:v:l:", long_options, &option_index);
+         if ( ch == -1 )
+              break;
+         switch (ch) {
+              case 'D':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   inLengths = getTypeValuesFromString<size_t>(optarg);
+                   break;
+              case 'R':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   toReduceDims = getTypeValuesFromString<int>(optarg);
+                   break;
+              case 'O':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   reduceOp = static_cast<ReduceTensorOp_t>( std::atoi(optarg) ); 
+                   break;
+              case 'C':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   compTypeId = static_cast<appDataType_t>( std::atoi(optarg) );
+                   break;
+              case 'N':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   nanOpt = static_cast<NanPropagation_t>( std::atoi(optarg) ); 
+                   break;
+              case 'I':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   indicesOpt = static_cast<ReduceTensorIndices_t>( std::atoi(optarg) ); 
+                   break;
+              case 'S':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   scales = getTypeValuesFromString<float>(optarg);
+
+                   if ( scales.size() != 2 )
+                        throw std::runtime_error("Invalid option format!");
+
+                   break;
+              case 'v':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   do_verification = static_cast<bool>( std::atoi(optarg) );
+                   break;
+              case 'l':
+                   if ( !optarg )
+                        throw std::runtime_error("Invalid option format!");
+
+                   do_logging = static_cast<bool>( std::atoi(optarg) );
+                   break;
+              case '?':
+                   if (std::string(long_options[option_index].name) == "half")
+                       use_half = true;
+                   else
+                   if (std::string(long_options[option_index].name) == "double")
+                       use_double = true;
+                   else
+                   if (std::string(long_options[option_index].name) == "help") {
+                       show_usage(argv[0]);
+                       exit(0);
+                   };
+                   break;
+
+              default:
+                   show_usage(argv[0]);
+                   throw std::runtime_error("Invalid cmd-line options!");
+         };
+    };
+
+    if (optind + 2 > argc )
+        throw std::runtime_error("Invalid cmd-line arguments, more argumetns are needed!");
+
+    init_method = std::atoi( argv[optind++] );
+    nrepeat = std::atoi( argv[optind] );
+
+    if ( scales.empty() ) {
+	 scales.push_back(1.0f); 
+	 scales.push_back(0.0f); 
+    }; 
+};
+
+template<typename dataType, typename compType>
+static void do_reduce_testing(olCompile::Handle* handle); 
 
 int main(int argc, char* argv[])
 {
     using namespace ck;
-    using size_t = std::size_t;
+    using half = half_float::half; 
+
+    check_cmdline_arguments(argc, argv); 
 
     hipStream_t stream;
     olCompile::Handle* handle;
@@ -55,30 +269,9 @@ int main(int argc, char* argv[])
 
     handle = new olCompile::Handle(stream);
 
-    const bool do_verification    = atoi(argv[1]);
-    const int init_method         = atoi(argv[2]);
-    const bool do_log             = atoi(argv[3]);
-    const int nrepeat             = atoi(argv[4]);
+    check_reduce_dims(inLengths.size(), toReduceDims); 
 
-    using srcDataType   = float;
-    using dstDataType   = float;
-    const appDataType_t compTypeId   = appFloat;
-
-    using compType = Driver::get_type_from_type_enum<compTypeId>::type;
-
-    float alpha = 0.5f; 
-    float beta = 0.5f; 
-    ReduceTensorOp_t reduceOp = ReduceTensorOp_t::REDUCE_TENSOR_ADD; 
-    NanPropagation_t nanPropaOpt = NanPropagation_t::NOT_PROPAGATE_NAN;
-    ReduceTensorIndices_t reduceIndiceOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES; 
-
-    std::vector<size_t> inLengths = {64L, 3L, 280L, 81L}; 
-    std::vector<int> invariantDims = {1, 2, 3};  
-    std::vector<int> toReduceDims = {0}; 
-
-    std::vector<size_t> outLengths; 
-
-    check_reduce_dims(invariantDims, toReduceDims, inLengths.size()); 
+    invariantDims = get_invariant_dims(inLengths.size(), toReduceDims); 
 
     if ( invariantDims.empty() ) {
 	 outLengths.push_back(1); 
@@ -87,16 +280,48 @@ int main(int argc, char* argv[])
          for (auto dim : invariantDims) 
 	      outLengths.push_back(inLengths[dim]); 
     }; 
-   
-    Tensor<srcDataType> in(inLengths);
-    Tensor<dstDataType> out_host(outLengths);
-    Tensor<dstDataType> out_device(outLengths);
+
+    if ( use_half ) {
+         if ( compTypeId == appHalf ) 
+              do_reduce_testing<half_float::half, half_float::half>(handle); 
+	 else
+         if ( compTypeId == appFloat ) 
+	      do_reduce_testing<half_float::half, float>(handle); 
+	 else 
+              throw std::runtime_error("Invalid compType assignment!"); 
+    }
+    else
+    if ( use_double ) 
+	 do_reduce_testing<double, double>(handle); 
+    else {
+         if ( compTypeId == appFloat )
+	      do_reduce_testing<float, float>(handle); 
+	 else
+         if ( compTypeId == appDouble )
+	      do_reduce_testing<float, double>(handle); 
+	 else 
+              throw std::runtime_error("Invalid compType assignment!"); 
+    }; 
+
+    delete handle; 
+    MY_HIP_CHECK(hipStreamDestroy(stream));
+}; 
+
+template<typename dataType, typename compType>
+static void do_reduce_testing(olCompile::Handle* handle)
+{
+    Tensor<dataType> in(inLengths);
+    Tensor<dataType> out_host(outLengths);
+    Tensor<dataType> out_device(outLengths);
     Tensor<int> indices_host(outLengths); 
 
     ostream_HostTensorDescriptor(in.mDesc, std::cout << "in: ");
     ostream_HostTensorDescriptor(out_host.mDesc, std::cout << "out: ");
 
     std::size_t num_thread = std::thread::hardware_concurrency();
+
+    float alpha = scales[0]; 
+    float beta = scales[1]; 
 
     if(do_verification)
     {
@@ -125,24 +350,21 @@ int main(int argc, char* argv[])
 
     tunable_dyn_generic_reduction* tunable = &default_tunable_dyn_generic_reduction;
 
-    device_dynamic_generic_reduction_olc<srcDataType, compType, dstDataType>(handle, invariantDims, toReduceDims, in, out_device, reduceOp, nanPropaOpt, reduceIndiceOpt, alpha,  beta,  tunable, nrepeat);
+    device_dynamic_generic_reduction_olc<dataType, compType, dataType>(handle, invariantDims, toReduceDims, in, out_device, reduceOp, nanOpt, indicesOpt, alpha, beta,  tunable, nrepeat);
 
     if(do_verification)
     {
-        ReductionHost<srcDataType, dstDataType> hostReduce(reduceOp,  compTypeId, nanPropaOpt, reduceIndiceOpt, in.mDesc, out_host.mDesc, invariantDims, toReduceDims);  
+        ReductionHost<dataType, dataType> hostReduce(reduceOp, compTypeId, nanOpt, indicesOpt, in.mDesc, out_host.mDesc, invariantDims, toReduceDims);  
 
         hostReduce.Run(alpha, in.mData.data(), beta, out_host.mData.data(), indices_host.mData.data()); 
 
         check_error(out_host, out_device);
 
-        if(do_log)
+        if(do_logging)
         {
             LogRange(std::cout << "in : ", in.mData, ",") << std::endl;
             LogRange(std::cout << "out_host  : ", out_host.mData, ",") << std::endl;
             LogRange(std::cout << "out_device: ", out_device.mData, ",") << std::endl;
         }
     }
-
-    delete handle;
-    MY_HIP_CHECK(hipStreamDestroy(stream));
 }
