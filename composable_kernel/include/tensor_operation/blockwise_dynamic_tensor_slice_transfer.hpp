@@ -92,15 +92,11 @@ struct BlockwiseDynamicTensorSliceTransfer_v4
     template <typename SrcBuffer>
     __device__ void RunRead(const SrcDesc& src_desc, const SrcBuffer& src_buf)
     {
-        constexpr index_t ntransform_src = SrcDesc::GetNumOfTransform();
-
-        constexpr auto zeros = typename uniform_sequence_gen<ntransform_src, 0>::type{};
-
-        constexpr auto src_iterator_hacks =
-            make_tuple(generate_tuple([&](auto) { return zeros; }, Number<nDim>{}),
-                       generate_tuple([&](auto) { return zeros; }, Number<nDim>{}));
-
-        RunRead(src_desc, src_buf, src_iterator_hacks);
+        if(BlockSize == thread_cluster_desc_.GetElementSize() or
+           get_thread_local_1d_id() < thread_cluster_desc_.GetElementSize())
+        {
+            threadwise_transfer_.RunRead(src_desc, src_buf);
+        }
     }
 
     template <typename DstBuffer>
