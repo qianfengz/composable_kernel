@@ -15,12 +15,11 @@
 #include "conv_common.hpp"
 #include "host_conv.hpp"
 #include "device_tensor.hpp"
-#include "olc_device_dynamic_generic_reduction.hpp"
-#include "olc_driver_common.hpp"
-#include "olc_reduce_common.hpp"
+#include "online_device_dynamic_generic_reduction.hpp"
+#include "online_driver_common.hpp"
+#include "online_reduce_common.hpp"
 #include "host_generic_reduction.hpp"
 
-#include "conv_tunables.hpp"
 #include "handle.hpp"
 #include "hipCheck.hpp"
 

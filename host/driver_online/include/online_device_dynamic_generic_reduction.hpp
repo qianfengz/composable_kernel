@@ -1,9 +1,9 @@
 #include "device.hpp"
 #include "host_tensor.hpp"
 
-#include "olc_driver_common.hpp"
-#include "olc_reduce_common.hpp"
-#include "conv_tunables.hpp"
+#include "online_driver_common.hpp"
+#include "online_reduce_common.hpp"
+#include "generic_reduction_tunable.hpp"
 
 #include "handle.hpp"
 

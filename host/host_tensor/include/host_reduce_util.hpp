@@ -23,8 +23,8 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef GUARD_CPU_REDUCE_UTIL_HPP
-#define GUARD_CPU_REDUCE_UTIL_HPP
+#ifndef GUARD_HOST_REDUCE_UTIL_HPP
+#define GUARD_HOST_REDUCE_UTIL_HPP
 
 #include <half.hpp>
 #include <limits>
@@ -33,7 +33,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "olc_reduce_common.hpp"
+#include "online_reduce_common.hpp"
 
 namespace reduce {
 

@@ -34,7 +34,7 @@
 #include <cassert>
 #include <cmath>
 
-#include "olc_reduce_common.hpp"
+#include "online_reduce_common.hpp"
 #include "host_reduce_util.hpp"
 
 using float16 = half_float::half;
