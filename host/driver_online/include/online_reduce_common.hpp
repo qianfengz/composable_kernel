@@ -23,8 +23,8 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef OLC_REDUCE_COMMON_HPP_
-#define OLC_REDUCE_COMMON_HPP_ 1
+#ifndef ONLINE_REDUCE_COMMON_HPP_
+#define ONLINE_REDUCE_COMMON_HPP_ 1
 
 #include <half.hpp>
 

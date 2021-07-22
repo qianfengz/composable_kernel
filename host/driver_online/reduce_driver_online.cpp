@@ -314,8 +314,8 @@ static void do_reduce_testing(olCompile::Handle* handle)
     Tensor<dataType> out_device(outLengths);
     Tensor<int> indices_host(outLengths); 
 
-    ostream_HostTensorDescriptor(in.mDesc, std::cout << "in: ");
-    ostream_HostTensorDescriptor(out_host.mDesc, std::cout << "out: ");
+    //ostream_HostTensorDescriptor(in.mDesc, std::cout << "in: ");
+    //ostream_HostTensorDescriptor(out_host.mDesc, std::cout << "out: ");
 
     std::size_t num_thread = std::thread::hardware_concurrency();
 

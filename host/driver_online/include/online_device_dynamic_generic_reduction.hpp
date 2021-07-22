@@ -331,8 +331,9 @@ void device_dynamic_generic_reduction_olc(
     const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd2 = {static_cast<size_t>(GridSize) * tunable->BlockSize, 1, 1};
 
-    std::string program_name = "dynamic_gridwise_generic_reduction.cpp";
+    std::string program_name;
     std::string algo_name    = "dynamic_generic_reduction";
+    std::string kernel_name;
 
     std::string param = " -std=c++17 ";
     std::string network_config;
@@ -387,7 +388,8 @@ void device_dynamic_generic_reduction_olc(
     for(index_t i = 0; i < nrepeat; ++i)
     {
         KernelTimer timer1, timer2;
-        std::string kernel_name;
+
+        program_name = "dynamic_gridwise_generic_reduction_first_call.cpp"; 
 
         kernel_name = "gridwise_generic_reduce_1_prepare";
         auto network_config_1 = network_config + "_1_P";
@@ -397,12 +399,12 @@ void device_dynamic_generic_reduction_olc(
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
 
-        kernel_name           = "gridwise_generic_reduce_1";
+        kernel_name = "gridwise_generic_reduce_1";
         auto network_config_2 = network_config + "_1";
 
         timer2.Start();
         handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
-		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
+		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf.GetDeviceBuffer());  
         timer2.End();
 
         kernel1_times.push_back(timer1.GetElapsedTime());
@@ -413,6 +415,8 @@ void device_dynamic_generic_reduction_olc(
             int GridSize_2       = static_cast<int>( configurator.getGridSize_2(invariantLength, toReduceLength_2) ); 
             const std::vector<size_t> vgd2_2 = {static_cast<size_t>(GridSize_2) * tunable->BlockSize, size_t{1}, size_t{1}};
             auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2); 
+
+            program_name = "dynamic_gridwise_generic_reduction_second_call.cpp"; 
 
             kernel_name = "gridwise_generic_reduce_2_prepare";
             network_config_1 = network_config + "_2_P";
@@ -427,7 +431,7 @@ void device_dynamic_generic_reduction_olc(
 
             timer2.Start(); 
             handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2_2, param)(static_cast<int>(reduceImpl2), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
-		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf);  
+		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf.GetDeviceBuffer());  
 	    timer1.End(); 
 
             kernel3_times.push_back(timer1.GetElapsedTime());

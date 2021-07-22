@@ -400,7 +400,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
 
             StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
 
-            threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf(I0));
+            threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 	    
             accuValue_buf(I0) += type_convert<compType>{}(priorDstValue_buf[I0] * beta);
         }

@@ -225,7 +225,7 @@ struct GridwiseReduction_xy_to_x_multiblock
         const index_t blkgroup_id     = block_global_id / BlkGroupSize;
         const index_t block_local_id  = block_global_id % BlkGroupSize;
 
-        constexpr index_t reduceSizePerBlock =
+        const index_t reduceSizePerBlock =
             (((toReduceLength + BlkGroupSize - 1) / BlkGroupSize + BlockBufferSize - 1) / BlockBufferSize) * BlockBufferSize;
 
         constexpr auto in_block_desc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<1>{}, Number<BlockSize * GredAccessesPerThreadInBlock>{}));
