@@ -68,7 +68,7 @@ static inline std::function<void(compType&)> PreUnaryOpFn(ReduceTensorOp_t op_, 
 
     switch(op_)
     {
-    case_REDUCE_TENSOR_NORM1: return ([&](compType& a_) { a_ = abs(a_); });
+    case REDUCE_TENSOR_NORM1: return ([&](compType& a_) { a_ = abs(a_); });
     case REDUCE_TENSOR_NORM2: return ([&](compType& a_) { a_ = a_ * a_; });
     case REDUCE_TENSOR_AMAX: return ([&](compType& a_) { a_ = abs(a_); });
 
@@ -79,8 +79,8 @@ static inline std::function<void(compType&)> PreUnaryOpFn(ReduceTensorOp_t op_, 
     case REDUCE_TENSOR_MAX: return ([&](compType&) {});
 
     default:
-    throw std::runtime_error(std::string(__FUNCTION__) +
-                             ": using undefined Reduction operation is not permitted");
+    throw std::runtime_error(std::string(__FUNCTION__) + " operator: " + std::to_string(static_cast<int>(op_)) +
+                             ", using undefined Reduction operation is not permitted");
     }; 
 };
 
