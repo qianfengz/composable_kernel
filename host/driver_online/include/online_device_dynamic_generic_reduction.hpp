@@ -331,9 +331,7 @@ void device_dynamic_generic_reduction_olc(
     const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd2 = {static_cast<size_t>(GridSize) * tunable->BlockSize, 1, 1};
 
-    std::string program_name;
     std::string algo_name    = "dynamic_generic_reduction";
-    std::string kernel_name;
 
     std::string param = " -std=c++17 ";
     std::string network_config;
@@ -389,21 +387,22 @@ void device_dynamic_generic_reduction_olc(
     {
         KernelTimer timer1, timer2;
 
-        program_name = "dynamic_gridwise_generic_reduction_first_call.cpp"; 
+	std::string param1 = param + " -DCK_PARAM_REDUCE_IMPL=" + std::to_string(static_cast<int>(reduceImpl)); 
 
-        kernel_name = "gridwise_generic_reduce_1_prepare";
-        auto network_config_1 = network_config + "_1_P";
+	std::string program_name1 = "dynamic_gridwise_generic_reduction_first_call.cpp"; 
+	std::string kernel_name1 = "gridwise_generic_reduce_1_prepare";
+	std::string network_config_1 = network_config + "_1_P";
 
         timer1.Start();
-        handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl), GridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
+        handle->AddKernel(algo_name, network_config_1, program_name1, kernel_name1, vld, vgd1, param1)(GridSize, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides, 
 			                                                                                          p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding); 
         timer1.End();
 
-        kernel_name = "gridwise_generic_reduce_1";
-        auto network_config_2 = network_config + "_1";
+        kernel_name1 = "gridwise_generic_reduce_1";
+        network_config_1 = network_config + "_1";
 
         timer2.Start();
-        handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2, param)(static_cast<int>(reduceImpl), origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
+        handle->AddKernel(algo_name, network_config_1, program_name1, kernel_name1, vld, vgd2, param1)(origReduceLen, BlkGroupSize, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding, 
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf.GetDeviceBuffer());  
         timer2.End();
 
@@ -416,21 +415,22 @@ void device_dynamic_generic_reduction_olc(
             const std::vector<size_t> vgd2_2 = {static_cast<size_t>(GridSize_2) * tunable->BlockSize, size_t{1}, size_t{1}};
             auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2); 
 
-            program_name = "dynamic_gridwise_generic_reduction_second_call.cpp"; 
+	    std::string param2 = param + " -DCK_PARAM_REDUCE_IMPL=" + std::to_string(static_cast<int>(reduceImpl2));
 
-            kernel_name = "gridwise_generic_reduce_2_prepare";
-            network_config_1 = network_config + "_2_P";
+	    std::string program_name2 = "dynamic_gridwise_generic_reduction_second_call.cpp"; 
+	    std::string kernel_name2 = "gridwise_generic_reduce_2_prepare";
+	    std::string network_config_2 = network_config + "_2_P";
 
             timer1.Start(); 
-            handle->AddKernel(algo_name, network_config_1, program_name, kernel_name, vld, vgd1, param)(static_cast<int>(reduceImpl2), GridSize_2, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
+            handle->AddKernel(algo_name, network_config_2, program_name2, kernel_name2, vld, vgd1, param2)(GridSize_2, BlkGroupSize, p_dev_inLengths, p_dev_inStrides, p_dev_outLengths, p_dev_outStrides,
                                                                                                                   p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding);
 	    timer1.End(); 
 
-            kernel_name = "gridwise_generic_reduce_2";
+            kernel_name2 = "gridwise_generic_reduce_2";
             network_config_2 = network_config + "_2";
 
             timer2.Start(); 
-            handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2_2, param)(static_cast<int>(reduceImpl2), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
+            handle->AddKernel(algo_name, network_config_2, program_name2, kernel_name2, vld, vgd2_2, param2)(origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf.GetDeviceBuffer());  
 	    timer1.End(); 
 
