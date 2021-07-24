@@ -47,7 +47,7 @@ template <index_t BlockSize,
           index_t GredAccessesPerThreadInWarp>
 struct Gridwise2dReduction
 {
-    static constexpr auto reduceImpl       = static_cast<ReduceMethod_t>(reduceImpl_I); 
+    static constexpr auto reduceImpl       = static_cast<ReductionMethod_t>(reduceImpl_I); 
     static constexpr auto op               = static_cast<ReduceTensorOp_t>(op_I);
     static constexpr auto nanPropaOpt      = static_cast<NanPropagation_t>(nanPropaOpt_I);
     static constexpr auto reduceIndicesOpt = static_cast<ReduceTensorIndices_t>(reduceIndicesOpt_I);
@@ -66,6 +66,7 @@ struct Gridwise2dReduction
     {
          template <typename src2dDescType, typename dst1dDescType>
          __device__ void RunMethod(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc,
+			                  int origReduceLen, int BlkGroupSize,
                                           srcDataType alpha,
                                           const srcDataType* const __restrict__ p_src_global,
                                           dstDataType beta,
@@ -75,6 +76,7 @@ struct Gridwise2dReduction
                                           int* const __restrict__ indices_global) const
          {
               (void)ws_buf1_global; // unused
+	      (void)BlkGroupSize;   // unused
 
               using gridwise_reduce = GridwiseReduction_xy_to_x_direct_threadwise<BlockSize,
                                                                                 srcDataType,
@@ -88,7 +90,7 @@ struct Gridwise2dReduction
                                                                                 false,
                                                                                 true,
                                                                                 GredThreadBufferLength>; 
-              gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, 
+              gridwise_reduce{}.Run(src2dDesc, dst1dDesc, origReduceLen, 
 	  		            alpha,
                                     p_src_global,
                                     beta,
@@ -99,10 +101,11 @@ struct Gridwise2dReduction
     };
 
     template <>
-    struct Gridwise2dReduction_impl_wrapper<ReductionMethod_t::DirecWarpWise>
+    struct Gridwise2dReduction_impl_wrapper<ReductionMethod_t::DirectWarpWise>
     {
          template <typename src2dDescType, typename dst1dDescType>
          __device__  void RunMethod(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc,
+			                   int origReduceLen, int BlkGroupSize, 
                                            srcDataType alpha,
                                            const srcDataType* const __restrict__ p_src_global,
                                            dstDataType beta,
@@ -112,6 +115,7 @@ struct Gridwise2dReduction
                                            int* const __restrict__ indices_global) const 
          {
               (void)ws_buf1_global; // unused
+	      (void)BlkGroupSize;   // unused 
 
               using gridwise_reduce = GridwiseReduction_xy_to_x_direct_warpwise<BlockSize,
                                                                               srcDataType,
@@ -125,7 +129,7 @@ struct Gridwise2dReduction
                                                                               false,
                                                                               true,
                                                                               GredAccessesPerThreadInWarp>; 
-              gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, 
+              gridwise_reduce{}.Run(src2dDesc, dst1dDesc, origReduceLen, 
 			            alpha,
                                     p_src_global,
                                     beta,
@@ -140,6 +144,7 @@ struct Gridwise2dReduction
     {
          template <typename src2dDescType, typename dst1dDescType>
          __device__  void RunMethod(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc,
+			                   int origReduceLen, int BlkGroupSize,
                                            srcDataType alpha,
                                            const srcDataType* const __restrict__ p_src_global,
                                            dstDataType beta,
@@ -149,6 +154,7 @@ struct Gridwise2dReduction
                                            int* const __restrict__ indices_global) const 
          {
               (void)ws_buf1_global; // unused
+	      (void)BlkGroupSize;   // unused
 
               using gridwise_reduce = GridwiseReduction_xy_to_x_blockwise<BlockSize,
                                                                         srcDataType,
@@ -162,7 +168,7 @@ struct Gridwise2dReduction
                                                                         false,
                                                                         true,
                                                                         GredAccessesPerThreadInBlock>; 
-              gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen,
+              gridwise_reduce{}.Run(src2dDesc, dst1dDesc, origReduceLen,
 			            alpha,
                                     p_src_global,
                                     beta,
@@ -188,7 +194,7 @@ struct Gridwise2dReduction
 
         using gridwise_2d_reduce_impl = Gridwise2dReduction_impl_wrapper<reduceImpl>;	
 
-        gridwise_2d_reduce_impl{}.RunMethod(src2dDesc, dst1dDesc,
+        gridwise_2d_reduce_impl{}.RunMethod(src2dDesc, dst1dDesc, this->origReduceLen, this->BlkGroupSize,
                                             type_convert<srcDataType>{}(alpha),
                                             static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
                                             type_convert<dstDataType>{}(beta),
