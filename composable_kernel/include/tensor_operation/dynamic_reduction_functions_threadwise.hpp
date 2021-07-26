@@ -34,15 +34,20 @@
 
 namespace ck {
 
-template <index_t ThreadBufferLen,
+template <typename BufferType,
           typename opReduce,
           NanPropagation_t nanPropaOpt>
 struct ThreadReduce
 {
     using compType = typename opReduce::dataType;
+
+    static_assert(BufferType::IsStaticBuffer(), "Thread-wise reduction needs use StaticBuffer!"); 
+
+    static_assert(std::is_same<typename BufferType::type, compType>::value, "Data type of StaticBuffer for Thread-wise reduction should be same as the compType!"); 
+
+    static constexpr index_t ThreadBufferLen = BufferType::Size(); 
+
     using binop    = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
-    using BufferType = StaticBuffer<AddressSpace::Vgpr, compType, ThreadBufferLen>;
-    using IdxBufferType = StaticBuffer<AddressSpace::Vgpr, int, ThreadBufferLen>;
 
     // This interface does not accumulate on indices
     __device__ static void Reduce(const BufferType &thread_buffer, compType& accuData)
@@ -54,24 +59,11 @@ struct ThreadReduce
 
     // This interface accumulates on both data values and indices and
     // is called by Direct_ThreadWise reduction method at first-time reduction
-    __device__ static void
-    Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
+    __device__ static void Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
     {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {
             int currIndex    = I + indexStart;
             binop::calculate(accuData, thread_buffer[I], accuIndex, currIndex);
-        } );
-    };
-
-    // This interface accumulates on both data values and indices and
-    // is called by Direct_ThreadWise reduction method at second-time reduction
-    __device__ static void Reduce3(const BufferType &thread_buffer,
-                                   const IdxBufferType &thread_indices_buffer,
-                                   compType& accuData,
-                                   int& accuIndex)
-    {
-        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
-            binop::calculate(accuData, thread_buffer[I], accuIndex, thread_indices_buffer[I]);
         } );
     };
 
@@ -90,6 +82,55 @@ struct ThreadReduce
         static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
             unary_op(thread_buffer(I));
         } ); 	
+    };
+};
+
+template <typename BufferType, typename IdxBufferType,
+          typename opReduce,
+          NanPropagation_t nanPropaOpt>
+struct ThreadReduceWithIndicesInput
+{
+    using compType = typename opReduce::dataType;
+
+    static_assert(BufferType::IsStaticBuffer(), "Thread-wise reduction needs use StaticBuffer!");
+    static_assert(IdxBufferType::IsStaticBuffer(), "Thread-wise reduction needs use StaticBuffer for indices!");
+
+    static_assert(std::is_same<typename BufferType::type, compType>::value, "Data type of StaticBuffer for Thread-wise reduction should be same as the compType!");
+    static_assert(std::is_same<typename IdxBufferType::type, index_t>::value, "Indices type of StaticBuffer for Thread-wise reduction should be index_t!"); 
+
+    static_assert(BufferType::Size() == IdxBufferType::Size(), "StaticBuffers for data and indices should have the same sizes!"); 
+
+    static constexpr index_t ThreadBufferLen = BufferType::Size();
+
+    using binop    = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
+
+    // This interface accumulates on both data values and indices and
+    // is called by Direct_ThreadWise reduction method at second-time reduction
+    __device__ static void Reduce(const BufferType &thread_buffer,
+                                   const IdxBufferType &thread_indices_buffer,
+                                   compType& accuData,
+                                   int& accuIndex)
+    {
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {
+            binop::calculate(accuData, thread_buffer[I], accuIndex, thread_indices_buffer[I]);
+        } );
+    };
+
+    // Set the elements in the per-thread buffer to a specific value
+    __device__ static void set_buffer_value(BufferType &thread_buffer, compType value)
+    {
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {
+            thread_buffer(I) = value;
+        } );
+    };
+
+    // Execute unary operation on the per-thread buffer elements
+    template <typename unary_op_type>
+    __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
+    {
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {
+            unary_op(thread_buffer(I));
+        } );
     };
 };
 
