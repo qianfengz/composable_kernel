@@ -432,7 +432,7 @@ void device_dynamic_generic_reduction_olc(
             timer2.Start(); 
             handle->AddKernel(algo_name, network_config_2, program_name, kernel_name, vld, vgd2_2, param)(static_cast<int>(reduceImpl2), origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc, p_dev_src_use_padding, p_dev_dst_use_padding,
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf.GetDeviceBuffer());  
-	    timer1.End(); 
+	    timer2.End(); 
 
             kernel3_times.push_back(timer1.GetElapsedTime());
             kernel4_times.push_back(timer2.GetElapsedTime());
