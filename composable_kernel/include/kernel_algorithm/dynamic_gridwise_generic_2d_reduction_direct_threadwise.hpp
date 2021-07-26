@@ -59,8 +59,6 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
 
-    using threadwise_reduce = ThreadReduce<GredThreadBufferLength, opReduce, nanPropaOpt>;
-
     static constexpr auto I0 = Number<0>{}; 
 
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
@@ -90,7 +88,10 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
         auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
-	typename threadwise_reduce::BufferType in_thread_buf; 
+        StaticBuffer<AddressSpace::Vgpr, compType, GredThreadBufferLength> in_thread_buf;  
+
+        using threadwise_reduce = ThreadReduce<decltype(in_thread_buf), opReduce, nanPropaOpt>;
+
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal       = opReduce::GetZeroVal();
@@ -194,7 +195,10 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
         auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-	typename threadwise_reduce::BufferType in_thread_buf; 
+        StaticBuffer<AddressSpace::Vgpr, compType, GredThreadBufferLength> in_thread_buf;  
+
+        using threadwise_reduce = ThreadReduce<decltype(in_thread_buf), opReduce, nanPropaOpt>;
+
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
 	    
@@ -319,8 +323,11 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
         auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
         auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-	typename threadwise_reduce::BufferType in_thread_val_buf; 
-	typename threadwise_reduce::IdxBufferType in_thread_idx_buf; 
+        StaticBuffer<AddressSpace::Vgpr, compType, GredThreadBufferLength> in_thread_val_buf;  
+        StaticBuffer<AddressSpace::Vgpr, int, GredThreadBufferLength> in_thread_idx_buf;  
+
+        using threadwise_reduce = ThreadReduceWithIndicesInput<decltype(in_thread_val_buf), decltype(in_thread_idx_buf), opReduce, nanPropaOpt>;
+
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
 
@@ -372,7 +379,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
             threadwise_src_idx_load.Run(src2dDesc, src_global_idx_buf, ThreadBufferDesc, make_tuple(I0, I0), in_thread_idx_buf);
 
             // do the reduction on the Thread Buffer
-            threadwise_reduce::Reduce3(in_thread_val_buf, in_thread_idx_buf, accuValue_buf(I0), accuIndex_buf(I0));
+            threadwise_reduce::Reduce(in_thread_val_buf, in_thread_idx_buf, accuValue_buf(I0), accuIndex_buf(I0));
 
             threadwise_src_val_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);
             threadwise_src_idx_load.MoveSrcSliceWindow(src2dDesc, in_thread_copy_step);

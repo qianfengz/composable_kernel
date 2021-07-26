@@ -34,18 +34,18 @@
 
 namespace ck {
 
-template <int NumRows, int RowSize, 
+template <typename buffer2dDescType, 
           bool blockIsOneRow,
           typename opReduce,
           NanPropagation_t nanPropaOpt>
 struct BlockwiseReduction_2d_block_buffer
 {
-    static constexpr auto buffer2dDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<NumRows>{}, Number<RowSize>{}));
-
     using compType = typename opReduce::dataType;
 
-    static constexpr index_t BlockSize = blockIsOneRow ? RowSize : NumRows;
-    static constexpr index_t NumBlocks = blockIsOneRow ? NumRows : RowSize;
+    static constexpr auto buffer2dDesc = buffer2dDescType{};     
+
+    static constexpr index_t BlockSize = blockIsOneRow ? buffer2dDesc.GetLength(Number<1>{}) : buffer2dDesc.GetLength(Number<0>{});
+    static constexpr index_t NumBlocks = blockIsOneRow ? buffer2dDesc.GetLength(Number<0>{}) : buffer2dDesc.GetLength(Number<1>{});
     using binop = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
 
     // This interface does not accumulate on indices

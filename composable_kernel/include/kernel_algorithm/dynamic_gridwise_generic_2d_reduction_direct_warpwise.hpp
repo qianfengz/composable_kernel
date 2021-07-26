@@ -57,8 +57,6 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
 
-    using warpwise_reduce = WarpReduce<BlockSize, GredAccessesPerThreadInWarp, opReduce, nanPropaOpt>;
-
     static constexpr auto I0 = Number<0>{}; 
 
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
@@ -88,7 +86,10 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
         auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
-	typename warpwise_reduce::BufferType in_thread_buf;
+        StaticBuffer<AddressSpace::Vgpr, compType, GredAccessesPerThreadInWarp> in_thread_buf;  
+
+        using warpwise_reduce = WarpReduce<decltype(in_thread_buf), BlockSize, opReduce, nanPropaOpt>;
+
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal = opReduce::GetZeroVal();
@@ -200,7 +201,10 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
         auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-	typename warpwise_reduce::BufferType in_thread_buf;
+        StaticBuffer<AddressSpace::Vgpr, compType, GredAccessesPerThreadInWarp> in_thread_buf;  
+
+        using warpwise_reduce = WarpReduce<decltype(in_thread_buf), BlockSize, opReduce, nanPropaOpt>;
+
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
 
@@ -332,8 +336,11 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
         auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
         auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-	typename warpwise_reduce::BufferType in_thread_val_buf;
-	typename warpwise_reduce::IdxBufferType in_thread_idx_buf;
+        StaticBuffer<AddressSpace::Vgpr, compType, GredAccessesPerThreadInWarp> in_thread_val_buf;  
+        StaticBuffer<AddressSpace::Vgpr, int, GredAccessesPerThreadInWarp> in_thread_idx_buf;  
+
+        using warpwise_reduce = WarpReduceWithIndicesInput<decltype(in_thread_val_buf), decltype(in_thread_idx_buf), BlockSize, opReduce, nanPropaOpt>;
+
         StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
 	
@@ -387,7 +394,7 @@ struct GridwiseReduction_xy_to_x_direct_warpwise
             threadwise_src_idx_load.Run(src2dDesc, src_global_idx_buf, ThreadBufferDesc, make_tuple(I0, I0), in_thread_idx_buf);
 
             // do the warp-wise reduction on data of all thread buffers
-            warpwise_reduce::Reduce3(in_thread_val_buf, in_thread_idx_buf, accuValue_buf(I0), accuIndex_buf(I0));
+            warpwise_reduce::Reduce(in_thread_val_buf, in_thread_idx_buf, accuValue_buf(I0), accuIndex_buf(I0));
 
             // zero the data on the Thread Buffer
             warpwise_reduce::set_buffer_value(in_thread_val_buf, zeroVal);
