@@ -55,8 +55,11 @@ struct GridwiseReduction_xy_to_x_multiblock
     using preUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, true, false>::posUnaryOp;
 
-    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<GredAccessesPerThreadInBlock, BlockSize, true, opReduce, nanPropaOpt>;
+    static constexpr auto buffer2dDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<GredAccessesPerThreadInBlock>{}, Number<BlockSize>{}));
+    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(buffer2dDesc), true, opReduce, nanPropaOpt>;
 
+    static constexpr index_t BlockBufferSize = buffer2dDesc.GetElementSize();
+    
     static constexpr auto I0 = Number<0>{}; 
 
     __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
@@ -80,8 +83,6 @@ struct GridwiseReduction_xy_to_x_multiblock
     {
         (void)alpha; // unused
         (void)beta;  // unused
-
-        constexpr index_t BlockBufferSize = BlockSize * GredAccessesPerThreadInBlock;
 
         // LDS
         __shared__ compType p_in_block_buffer[BlockBufferSize];
@@ -195,8 +196,6 @@ struct GridwiseReduction_xy_to_x_multiblock
     {
         (void)alpha; // unused
         (void)beta;  // unused
-
-        constexpr index_t BlockBufferSize = BlockSize * GredAccessesPerThreadInBlock;
 
         // LDS
         __shared__ compType p_in_block_values_buffer[BlockBufferSize];

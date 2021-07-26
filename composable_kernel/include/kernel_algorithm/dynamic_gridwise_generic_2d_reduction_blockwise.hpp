@@ -50,16 +50,16 @@ template <index_t BlockSize,
 struct GridwiseReduction_xy_to_x_blockwise
 {
     static constexpr bool indexable = reduce_binary_operator<compType, op>::indexable;
-    static constexpr bool need_indices =
-        indexable && (reduceIndicesOpt != ReduceTensorIndices_t::NO_INDICES);
-
-    static constexpr index_t BlockBufferSize = BlockSize * GredAccessesPerThreadInBlock;
+    static constexpr bool need_indices = indexable && (reduceIndicesOpt != ReduceTensorIndices_t::NO_INDICES);
 
     using opReduce = typename reduce_binary_operator<compType, op>::opType;
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
 
-    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<GredAccessesPerThreadInBlock, BlockSize, true, opReduce, nanPropaOpt>;
+    static constexpr auto buffer2dDesc = make_dynamic_naive_tensor_descriptor_packed_v2(make_tuple(Number<GredAccessesPerThreadInBlock>{}, Number<BlockSize>{}));
+    using blockwise_reduce = BlockwiseReduction_2d_block_buffer<decltype(buffer2dDesc), true, opReduce, nanPropaOpt>;
+
+    static constexpr index_t BlockBufferSize = buffer2dDesc.GetElementSize();
 
     static constexpr auto I0 = Number<0>{}; 
 

@@ -34,19 +34,17 @@
 
 namespace ck {
 
-template <index_t BlockSize,
-          index_t ThreadBufferLen,
-          typename opReduce,
-          NanPropagation_t nanPropaOpt>
+template <typename BufferType, index_t BlockSize, typename opReduce, NanPropagation_t nanPropaOpt>
 struct WarpReduce
 {
     using compType = typename opReduce::dataType;
     using binop    = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
-    using BufferType = StaticBuffer<AddressSpace::Vgpr, compType, ThreadBufferLen>;
-    using IdxBufferType = StaticBuffer<AddressSpace::Vgpr, int, ThreadBufferLen>;
 
-    constexpr static bool have_builtin_shuffle =
-        std::is_same<compType, float>::value || std::is_same<compType, double>::value;
+    static_assert(BufferType::IsStaticBuffer(), "Per-thread buffer for WarpWise reduction should be StaticBuffer!");
+    static_assert(std::is_same<typename BufferType::type, compType>::value, "Data type of per-thread StaticBuffer for WarpWise reduction should be same as the compType!");
+
+    static constexpr index_t ThreadBufferLen = BufferType::Size();
+    static constexpr  bool have_builtin_shuffle = std::is_same<compType, float>::value || std::is_same<compType, double>::value;
 
     // This interface does not accumulate on indices
     __device__ static void Reduce(const BufferType &thread_buffer, compType& accuData)
@@ -121,10 +119,8 @@ struct WarpReduce
             binop::calculate(accuData, myBuffer[0]);
     };
 
-    // This interface accumulates on both data values and indices and
-    // is called by Direct_WarpWise reduction method at first-time reduction
-    __device__ static void
-    Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
+    // This interface accumulates on both data values and indices and is called by Direct_WarpWise reduction method at first-time reduction
+    __device__ static void Reduce2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
     {
         if constexpr(have_builtin_shuffle) 	
             Reduce2Impl1(thread_buffer, accuData, accuIndex, indexStart);
@@ -160,8 +156,7 @@ struct WarpReduce
             binop::calculate(accuData, lAccuData, accuIndex, lAccuIndex);
     };
 
-    // This interface implementation does not use HIP built-in device shuffling functions
-    // since for fp16, built-in shuffling functions is not provided by HIP
+    // This interface implementation does not use HIP built-in device shuffling functions since for fp16, built-in shuffling functions is not provided by HIP
     __device__ static void Reduce2Impl2(const BufferType &thread_buffer, compType& accuData, int& accuIndex, int indexStart)
     {
         compType lAccuData       = opReduce::GetZeroVal();
@@ -205,18 +200,55 @@ struct WarpReduce
             binop::calculate(accuData, myDataBuffer[0], accuIndex, myIndicesBuffer[0]);
     };
 
-    // This interface accumulates on both data values and indices and
-    // is called by Direct_WarpWise reduction method at second-time reduction
-    __device__ static void Reduce3(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
+    __device__ static void set_buffer_value(BufferType &thread_buffer, compType value)
+    {
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            thread_buffer(Number<I>{}) = value;
+        } ); 	
+
+        __all(1);
+    };
+
+    // Execute unary operation on the per-thread buffer elements
+    template <typename unary_op_type>
+    __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
+    {
+        static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
+            unary_op(thread_buffer(I));
+        } ); 	
+
+        __all(1);
+    };
+};
+
+template <typename BufferType, typename IdxBufferType, index_t BlockSize, typename opReduce, NanPropagation_t nanPropaOpt>
+struct WarpReduceWithIndicesInput
+{
+    using compType = typename opReduce::dataType;
+    using binop    = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
+
+    static_assert(BufferType::IsStaticBuffer(), "Per-thread buffer for WarpWise reduction should be StaticBuffer!");
+    static_assert(IdxBufferType::IsStaticBuffer(), "Per-thread buffer for WarpWise reduction should be StaticBuffer for indices!");
+
+    static_assert(std::is_same<typename BufferType::type, compType>::value, "Data type of per-thread StaticBuffer for WarpWise reduction should be same as the compType!");
+    static_assert(std::is_same<typename IdxBufferType::type, index_t>::value, "Indices type per-thread of StaticBuffer for WarpWise reduction should be index_t!");
+
+    static_assert(BufferType::Size() == IdxBufferType::Size(), "StaticBuffers for data and indices should have the same sizes!");
+
+    static constexpr index_t ThreadBufferLen = BufferType::Size();
+    static constexpr bool have_builtin_shuffle = std::is_same<compType, float>::value || std::is_same<compType, double>::value;
+
+    // This interface accumulates on both data values and indices and is called by Direct_WarpWise reduction method at second-time reduction
+    __device__ static void Reduce(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
     {
         if constexpr(have_builtin_shuffle) 	
-            Reduce3Impl1(thread_buffer, thread_indices_buffer, accuData, accuIndex);
+            ReduceImpl1(thread_buffer, thread_indices_buffer, accuData, accuIndex);
 	else
-            Reduce3Impl2(thread_buffer, thread_indices_buffer, accuData, accuIndex);
+            ReduceImpl2(thread_buffer, thread_indices_buffer, accuData, accuIndex);
     };
 
     // This interface implementation uses HIP built-in device shuffling functions
-    __device__ static void Reduce3Impl1(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
+    __device__ static void ReduceImpl1(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
     {
         compType lAccuData = opReduce::GetZeroVal();
         int lAccuIndex     = 0;
@@ -242,7 +274,7 @@ struct WarpReduce
 
     // This interface implementation does not use HIP built-in device shuffling functions
     // since for fp16, built-in shuffling functions is not provided by HIP
-    __device__ static void Reduce3Impl2(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
+    __device__ static void ReduceImpl2(const BufferType &thread_buffer, const IdxBufferType &thread_indices_buffer, compType& accuData, int& accuIndex)
     {
         compType lAccuData       = opReduce::GetZeroVal();
         int lAccuIndex           = 0;
@@ -284,7 +316,6 @@ struct WarpReduce
             binop::calculate(accuData, myDataBuffer[0], accuIndex, myIndicesBuffer[0]);
     };
 
-    template <typename BufferType>
     __device__ static void set_buffer_value(BufferType &thread_buffer, compType value)
     {
         static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		
@@ -295,7 +326,7 @@ struct WarpReduce
     };
 
     // Execute unary operation on the per-thread buffer elements
-    template <typename unary_op_type, typename BufferType>
+    template <typename unary_op_type>
     __device__ static void operate_on_elements(unary_op_type & unary_op, BufferType &thread_buffer)
     {
         static_for<0, ThreadBufferLen, 1>{}( [&](auto I) {		

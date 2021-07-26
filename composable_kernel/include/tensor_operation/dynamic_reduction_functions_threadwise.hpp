@@ -34,9 +34,7 @@
 
 namespace ck {
 
-template <typename BufferType,
-          typename opReduce,
-          NanPropagation_t nanPropaOpt>
+template <typename BufferType, typename opReduce, NanPropagation_t nanPropaOpt>
 struct ThreadReduce
 {
     using compType = typename opReduce::dataType;
@@ -85,9 +83,7 @@ struct ThreadReduce
     };
 };
 
-template <typename BufferType, typename IdxBufferType,
-          typename opReduce,
-          NanPropagation_t nanPropaOpt>
+template <typename BufferType, typename IdxBufferType, typename opReduce, NanPropagation_t nanPropaOpt>
 struct ThreadReduceWithIndicesInput
 {
     using compType = typename opReduce::dataType;
