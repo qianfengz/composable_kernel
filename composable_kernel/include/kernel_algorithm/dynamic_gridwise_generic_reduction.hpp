@@ -264,9 +264,6 @@ struct Gridwise2dReduction
 
         void* const ws_buf2_global = ws_buf2_bytes_offset > 0 ? static_cast<void*>(static_cast<char*>(ws_buf1_global) + ws_buf2_bytes_offset) : nullptr;
 
-        if ( hipBlockIdx_x == 0 && hipThreadIdx_x == 0 ) 
-	     printf("Call Run_2, reduceImpl=%d\n", this->reduceImpl); 
-
         switch (this->reduceImpl) {
             case ReductionMethod_t::DirectThreadWise:
                  this->Run_DirectThreadWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,

@@ -80,9 +80,11 @@ add_definitions("-DHIP_COMPILER_FLAGS=${HIP_COMPILER_FLAGS}")
 
 file(GLOB_RECURSE COMPOSABLE_KERNEL_INCLUDE_1 "${PROJECT_SOURCE_DIR}/composable_kernel/include/*/*.hpp")
 file(GLOB COMPOSABLE_KERNEL_INCLUDE_2 "${PROJECT_SOURCE_DIR}/external/rocm/include/bfloat16_dev.hpp")
+file(GLOB COMPOSABLE_KERNEL_INCLUDE_3 "${PROJECT_SOURCE_DIR}/composable_kernel/include/*.hpp")
 set(MCONV_KERNEL_INCLUDES
     ${COMPOSABLE_KERNEL_INCLUDE_1}
     ${COMPOSABLE_KERNEL_INCLUDE_2}
+    ${COMPOSABLE_KERNEL_INCLUDE_3}
    )
 
 file(GLOB_RECURSE MCONV_KERNELS "${PROJECT_SOURCE_DIR}/composable_kernel/src/kernel_wrapper/*.cpp")
