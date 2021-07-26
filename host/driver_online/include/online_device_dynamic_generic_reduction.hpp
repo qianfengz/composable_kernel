@@ -446,7 +446,8 @@ void device_dynamic_generic_reduction_olc(
         kernel1_times.push_back(timer1.GetElapsedTime());
         kernel2_times.push_back(timer2.GetElapsedTime());
 
-        if (reduceImpl == ReductionMethod_t::MultiBlock) {
+        if (reduceImpl == ReductionMethod_t::MultiBlock)
+       	{
             auto toReduceLength_2 = BlkGroupSize;
             int GridSize_2       = static_cast<int>( configurator.getGridSize_2(invariantLength, toReduceLength_2) ); 
             const std::vector<size_t> vgd2_2 = {static_cast<size_t>(GridSize_2) * tunable->BlockSize, size_t{1}, size_t{1}};
@@ -471,7 +472,7 @@ void device_dynamic_generic_reduction_olc(
             timer2.Start(); 
             handle->AddKernel(algo_name, network_config_2, program_name2, kernel_name2, vld, vgd2_2, param2)(origReduceLen, p_dev_src2dDesc, p_dev_dst1dDesc,
 		                                                            alpha, in_dev_buf.GetDeviceBuffer(), beta, out_dev_buf.GetDeviceBuffer(), workspace1.GetDeviceBuffer(), ws_buf2_bytes_offset, indices_dev_buf.GetDeviceBuffer());  
-	    timer1.End(); 
+	    timer2.End(); 
 
             kernel3_times.push_back(timer1.GetElapsedTime());
             kernel4_times.push_back(timer2.GetElapsedTime());
