@@ -57,28 +57,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize, int B
      const auto srcDesc = make_dynamic_naive_tensor_descriptor_v2(tupleSrcLengths, tupleSrcStrides);
      const auto dstDesc = make_dynamic_naive_tensor_descriptor_v2(tupleDstLengths, tupleDstStrides);
 
-#ifdef CK_REDUCE_ALL_DIMS     
-           const auto one_dim_srcDesc = transform_dynamic_tensor_descriptor(
-                                                           srcDesc,
-                                                           make_tuple(make_merge_transform(tupleSrcLengths)),
-                                                           make_tuple(typename arithmetic_sequence_gen<0, srcDims, 1>::type{}),
-                                                           make_tuple(Sequence<0>{}));
-
-           const auto two_dim_srcDesc = transform_dynamic_tensor_descriptor(
-                                                           one_dim_srcDesc,
-                                                           make_tuple(make_unmerge_transform(make_tuple(1, one_dim_srcDesc.GetLength(Number<0>{})))),
-                                                           make_tuple(Sequence<0>{}),
-                                                           make_tuple(Sequence<0, 1>{}));
-
-           const auto one_dim_dstDesc = transform_dynamic_tensor_descriptor(
-                                                           dstDesc,
-                                                           make_tuple(make_merge_transform(tupleDstLengths)),
-                                                           make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
-                                                           make_tuple(Sequence<0>{}));
-
-           gridwise_generic_reduce_pad_and_store<reduceImpl,src2d_need_padding,dst1d_need_padding>::RunMethod(GridSize, BlkGroupSize, two_dim_srcDesc, one_dim_dstDesc, p_src2dDesc, p_dst1dDesc);
-#else
-
+#ifndef CK_REDUCE_ALL_DIMS	     
            // for re-ordering the tensor dimensions
            using lowDimSeq  = typename sequence_merge<invariantDims, toReduceDims>::type;
            using highDimSeq = typename arithmetic_sequence_gen<0, srcDims, 1>::type;
@@ -107,8 +86,27 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize, int B
                                                            make_tuple(Sequence<0>{}));
 
            gridwise_generic_reduce_pad_and_store<reduceImpl,src2d_need_padding,dst1d_need_padding>::RunMethod(GridSize, BlkGroupSize, two_dim_srcDesc, one_dim_dstDesc, p_src2dDesc, p_dst1dDesc);
-#endif
+#else	   
+           const auto one_dim_srcDesc = transform_dynamic_tensor_descriptor(
+                                                           srcDesc,
+                                                           make_tuple(make_merge_transform(tupleSrcLengths)),
+                                                           make_tuple(typename arithmetic_sequence_gen<0, srcDims, 1>::type{}),
+                                                           make_tuple(Sequence<0>{}));
 
+           const auto two_dim_srcDesc = transform_dynamic_tensor_descriptor(
+                                                           one_dim_srcDesc,
+                                                           make_tuple(make_unmerge_transform(make_tuple(1, one_dim_srcDesc.GetLength(Number<0>{})))),
+                                                           make_tuple(Sequence<0>{}),
+                                                           make_tuple(Sequence<0, 1>{}));
+
+           const auto one_dim_dstDesc = transform_dynamic_tensor_descriptor(
+                                                           dstDesc,
+                                                           make_tuple(make_merge_transform(tupleDstLengths)),
+                                                           make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
+                                                           make_tuple(Sequence<0>{}));
+
+           gridwise_generic_reduce_pad_and_store<reduceImpl,src2d_need_padding,dst1d_need_padding>::RunMethod(GridSize, BlkGroupSize, two_dim_srcDesc, one_dim_dstDesc, p_src2dDesc, p_dst1dDesc);
+#endif	   
 }; 
 
 template <bool reduceAllDims, index_t srcDims, index_t dstDims, typename invariantDims, typename toReduceDims>
