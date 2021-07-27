@@ -88,6 +88,13 @@ struct scalar_type<half_t>
 };
 
 template <>
+struct scalar_type<double>
+{
+    using type  = double; 
+    static constexpr index_t vector_size = 1;
+}; 
+
+template <>
 struct scalar_type<ushort>
 {
     using type                           = ushort;
