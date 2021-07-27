@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <numeric>
 #include <initializer_list>
 #include <cstdlib>
@@ -35,6 +36,7 @@ static struct option long_options[] = {
                    {"scales", required_argument, NULL, 'S'},
                    {"half", no_argument, NULL, '?'},
                    {"double", no_argument, NULL, '?'},
+                   {"dumpout", required_argument, NULL, 'o'},
                    {"verify", required_argument, NULL, 'v'},
                    {"log", required_argument, NULL, 'l'},
                    {"help", no_argument, NULL, '?'},
@@ -105,6 +107,7 @@ static void show_usage(const char *cmd)
     std::cout << "--half, use fp16 for the input and output tensor data types" << std::endl;
     std::cout << "--double, use fp64 for the input and output tensor data types" << std::endl;
     std::cout << "--verify or -v, 1/0 to indicate whether to verify the reduction result by comparing with the host-based reduction" << std::endl;
+    std::cout << "--dumpout or -v, 1/0 to indicate wheter to save the reduction result to files for further analysis" << std::endl; 
     std::cout << "--log or -l, 1/0 to indicate whether to log some information" << std::endl;
 };
 
@@ -145,10 +148,12 @@ static vector<float> scales;
 
 static ReduceTensorOp_t reduceOp = ReduceTensorOp_t::REDUCE_TENSOR_ADD;
 static appDataType_t compTypeId = appFloat;
+static bool compType_assigned = false;  
 static NanPropagation_t nanOpt = NanPropagation_t::NOT_PROPAGATE_NAN;;
 static ReduceTensorIndices_t indicesOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES;
 static bool do_logging=false;
 static bool do_verification=false;
+static bool do_dumpout=false; 
 
 static int init_method;
 static int nrepeat;
@@ -158,7 +163,7 @@ static void check_cmdline_arguments(int argc, char *argv[])
     unsigned int ch;
 
     while (1) {
-         ch = getopt_long(argc, argv, "D:R:O:C:N:I:S:v:l:", long_options, &option_index);
+         ch = getopt_long(argc, argv, "D:R:O:C:N:I:S:v:o:l:", long_options, &option_index);
          if ( ch == -1 )
               break;
          switch (ch) {
@@ -185,6 +190,7 @@ static void check_cmdline_arguments(int argc, char *argv[])
                         throw std::runtime_error("Invalid option format!");
 
                    compTypeId = static_cast<appDataType_t>( std::atoi(optarg) );
+                   compType_assigned = true; 
                    break;
               case 'N':
                    if ( !optarg )
@@ -214,6 +220,12 @@ static void check_cmdline_arguments(int argc, char *argv[])
 
                    do_verification = static_cast<bool>( std::atoi(optarg) );
                    break;
+              case 'o':
+		   if ( !optarg ) 
+                        throw std::runtime_error("Invalid option format!");
+
+                   do_dumpout = static_cast<bool>( std::atoi(optarg) ); 
+                   break; 
               case 'l':
                    if ( !optarg )
                         throw std::runtime_error("Invalid option format!");
@@ -251,6 +263,22 @@ static void check_cmdline_arguments(int argc, char *argv[])
     }; 
 };
 
+template <typename T>
+static void dumpBufferToFile(const char* fileName, T* data, size_t dataNumItems)
+{
+    std::ofstream outFile(fileName, std::ios::binary);
+    if(outFile)
+    {
+        outFile.write(reinterpret_cast<char*>(data), dataNumItems * sizeof(T));
+        outFile.close();
+        std::cout << "Write output to file " << fileName << std::endl;  
+    }
+    else
+    {
+	std::cout << "Could not open file " << fileName << " for writing" << std::endl; 
+    }
+}
+
 template<typename dataType, typename compType>
 static void do_reduce_testing(olCompile::Handle* handle); 
 
@@ -281,6 +309,9 @@ int main(int argc, char* argv[])
     }; 
 
     if ( use_half ) {
+         if ( !compType_assigned ) 
+	      compTypeId = appHalf; 
+
          if ( compTypeId == appHalf ) 
               do_reduce_testing<half_float::half, half_float::half>(handle); 
 	 else
@@ -311,8 +342,9 @@ static void do_reduce_testing(olCompile::Handle* handle)
 {
     Tensor<dataType> in(inLengths);
     Tensor<dataType> out_host(outLengths);
-    Tensor<dataType> out_device(outLengths);
-    Tensor<int> indices_host(outLengths); 
+    Tensor<dataType> out_dev(outLengths);
+    Tensor<int>  out_indices_host(outLengths); 
+    Tensor<int>  out_indices_dev(outLengths); 
 
     //ostream_HostTensorDescriptor(in.mDesc, std::cout << "in: ");
     //ostream_HostTensorDescriptor(out_host.mDesc, std::cout << "out: ");
@@ -344,26 +376,34 @@ static void do_reduce_testing(olCompile::Handle* handle)
 
         if ( beta != 0.0f ) 
              for (size_t i=0; i < out_host.mDesc.GetElementSpace(); i++)
-                  out_device.mData[i] = out_host.mData[i];
+                  out_dev.mData[i] = out_host.mData[i];
     }
 
     tunable_dyn_generic_reduction* tunable = &default_tunable_dyn_generic_reduction;
 
-    device_dynamic_generic_reduction_olc<dataType, compType, dataType>(handle, invariantDims, toReduceDims, in, out_device, reduceOp, nanOpt, indicesOpt, alpha, beta,  tunable, nrepeat);
+    device_dynamic_generic_reduction_olc<dataType, compType, dataType>(handle, invariantDims, toReduceDims, in, out_dev, out_indices_dev, reduceOp, nanOpt, indicesOpt, alpha, beta,  tunable, nrepeat);
 
-    if(do_verification)
-    {
+    if(do_verification) {
         ReductionHost<dataType, dataType> hostReduce(reduceOp, compTypeId, nanOpt, indicesOpt, in.mDesc, out_host.mDesc, invariantDims, toReduceDims);  
 
-        hostReduce.Run(alpha, in.mData.data(), beta, out_host.mData.data(), indices_host.mData.data()); 
+        hostReduce.Run(alpha, in.mData.data(), beta, out_host.mData.data(), out_indices_host.mData.data()); 
 
-        check_error(out_host, out_device);
+        check_error(out_host, out_dev);
 
         if(do_logging)
         {
             LogRange(std::cout << "in : ", in.mData, ",") << std::endl;
             LogRange(std::cout << "out_host  : ", out_host.mData, ",") << std::endl;
-            LogRange(std::cout << "out_device: ", out_device.mData, ",") << std::endl;
+            LogRange(std::cout << "out_device: ", out_dev.mData, ",") << std::endl;
         }
     }
+
+    if(do_dumpout) {
+        dumpBufferToFile("dump_in.bin", in.mData.data(), in.mDesc.GetElementSize());
+        dumpBufferToFile("dump_out.bin", out_dev.mData.data(), out_dev.mDesc.GetElementSize());
+        dumpBufferToFile("dump_out_host.bin", out_host.mData.data(), out_host.mDesc.GetElementSize());
+        dumpBufferToFile("dump_indices.bin", out_indices_dev.mData.data(), out_indices_dev.mDesc.GetElementSize()); 
+        dumpBufferToFile("dump_indices_host.bin", out_indices_host.mData.data(), out_indices_host.mDesc.GetElementSize()); 
+    }; 
 }
+

@@ -239,6 +239,7 @@ void device_dynamic_generic_reduction_olc(
     const std::vector<int> toReduceDims,
     const Tensor<TSrc>& in,
     Tensor<TDst>& out,
+    Tensor<int>& out_indices,
     ReduceTensorOp_t reduceOp, 
     NanPropagation_t nanPropaOpt,
     ReduceTensorIndices_t reduceIndicesOpt, 
@@ -368,6 +369,10 @@ void device_dynamic_generic_reduction_olc(
     param += " -DCK_PARAM_REDUCE_INDICES=" + std::to_string(reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES ? 1 : 0);
     param += " -DCK_PARAM_IN_DIMS=" + std::to_string(inLengths.size()); 
     param += " -DCK_PARAM_OUT_DIMS=" + std::to_string(outLengths.size()); 
+
+    // disable AMD Buffer Addressing for double data transfering
+    if ( std::is_same<TSrc,double>::value || std::is_same<TDst,double>::value )
+	 param += " -DCK_USE_AMD_BUFFER_ADDRESSING=0"; 
 	     
     network_config = get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" + get_network_config_string_from_tunable(tunable) + "_"; 
 
@@ -456,4 +461,7 @@ void device_dynamic_generic_reduction_olc(
 
     // copy result back to host
     out_dev_buf.FromDevice(out.mData.data());
+
+    if (need_indices)
+	indices_dev_buf.FromDevice(out_indices.mData.data()); 
 }
