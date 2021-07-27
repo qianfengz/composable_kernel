@@ -194,8 +194,8 @@ struct Gridwise2dReduction
                                                    // ws_buf2_global instead of indices_global
     };
 
-    template <typename src2dDescType, typename dst1dDescType>
-    __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, 
+    template <index_t kernelId, typename src2dDescType, typename dst1dDescType>
+    __device__ void Run(Number<kernelId>, const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, 
 		               float alpha,
                                const void* const __restrict__ p_src_global,
                                float beta,
@@ -206,9 +206,10 @@ struct Gridwise2dReduction
     {
         void* const ws_buf2_global = ws_buf2_bytes_offset > 0 ? static_cast<void*>(static_cast<char*>(ws_buf1_global) + ws_buf2_bytes_offset) : nullptr;
 
-        switch (this->reduceImpl) {
-	    case ReductionMethod_t::DirectThreadWise:
-                 this->Run_DirectThreadWise<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+        if constexpr(kernelId == 0) {
+            switch (this->reduceImpl) {
+	        case ReductionMethod_t::DirectThreadWise:
+                     this->Run_DirectThreadWise<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
                            type_convert<srcDataType>{}(alpha),
                            static_cast<const srcDataType* const __restrict__>(p_src_global),
                            type_convert<dstDataType>{}(beta),
@@ -216,9 +217,9 @@ struct Gridwise2dReduction
                            static_cast<dstDataType* const __restrict__>(ws_buf1_global),
                            static_cast<int* const __restrict__>(ws_buf2_global),
                            static_cast<int* const __restrict__>(indices_global));
-		 break; 
-	    case ReductionMethod_t::DirectWarpWise:
-                 this->Run_DirectWarpWise<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+		     break; 
+	        case ReductionMethod_t::DirectWarpWise:
+                     this->Run_DirectWarpWise<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
                            type_convert<srcDataType>{}(alpha),
                            static_cast<const srcDataType* const __restrict__>(p_src_global),
                            type_convert<dstDataType>{}(beta),
@@ -226,9 +227,9 @@ struct Gridwise2dReduction
                            static_cast<dstDataType* const __restrict__>(ws_buf1_global),
                            static_cast<int* const __restrict__>(ws_buf2_global),
                            static_cast<int* const __restrict__>(indices_global));
-		 break; 
-            case ReductionMethod_t::BlockWise:
-                 this->Run_BlockWise<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+		     break; 
+                case ReductionMethod_t::BlockWise:
+                     this->Run_BlockWise<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
                            type_convert<srcDataType>{}(alpha),
                            static_cast<const srcDataType* const __restrict__>(p_src_global),
                            type_convert<dstDataType>{}(beta),
@@ -236,9 +237,9 @@ struct Gridwise2dReduction
                            static_cast<dstDataType* const __restrict__>(ws_buf1_global),
                            static_cast<int* const __restrict__>(ws_buf2_global),
                            static_cast<int* const __restrict__>(indices_global));
-		 break; 
-            case ReductionMethod_t::MultiBlock:
-                 this->Run_MultiBlock<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+		     break; 
+                case ReductionMethod_t::MultiBlock:
+                     this->Run_MultiBlock<true, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
                            type_convert<srcDataType>{}(alpha),
                            static_cast<const srcDataType* const __restrict__>(p_src_global),
                            type_convert<dstDataType>{}(beta),
@@ -246,59 +247,45 @@ struct Gridwise2dReduction
                            static_cast<dstDataType* const __restrict__>(ws_buf1_global),
                            static_cast<int* const __restrict__>(ws_buf2_global),
                            static_cast<int* const __restrict__>(indices_global));
-		 break; 
+		     break; 
+	    }; 
+        }
+	else {
+            switch (this->reduceImpl) {
+                case ReductionMethod_t::DirectThreadWise:
+                     this->Run_DirectThreadWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+                           type_convert<srcDataType>{}(alpha),
+                           static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
+                           type_convert<dstDataType>{}(beta),
+                           static_cast<dstDataType* const __restrict__>(p_dst_global),
+                           static_cast<dstDataType* const __restrict__>(nullptr),
+                           static_cast<int* const __restrict__>(ws_buf2_global),
+                           static_cast<int* const __restrict__>(indices_global));
+                     break;
+                case ReductionMethod_t::DirectWarpWise:
+                     this->Run_DirectWarpWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+                           type_convert<srcDataType>{}(alpha),
+                           static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
+                           type_convert<dstDataType>{}(beta),
+                           static_cast<dstDataType* const __restrict__>(p_dst_global),
+                           static_cast<dstDataType* const __restrict__>(nullptr),
+                           static_cast<int* const __restrict__>(ws_buf2_global),
+                           static_cast<int* const __restrict__>(indices_global));
+                     break;
+                case ReductionMethod_t::BlockWise:
+                     this->Run_BlockWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
+                           type_convert<srcDataType>{}(alpha),
+                           static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
+                           type_convert<dstDataType>{}(beta),
+                           static_cast<dstDataType* const __restrict__>(p_dst_global),
+                           static_cast<dstDataType* const __restrict__>(nullptr),
+                           static_cast<int* const __restrict__>(ws_buf2_global),
+                           static_cast<int* const __restrict__>(indices_global));
+                     break;
+                default:
+                     break;
+            };
 	}; 
-    };
-
-    template <typename src2dDescType, typename dst1dDescType>
-    __device__ void Run_2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, 
-		                 float alpha,
-                                 const void* const __restrict__ p_src_global,
-                                 float beta,
-                                 void* const __restrict__ p_dst_global,
-                                 void* const __restrict__ ws_buf1_global,
-                                 long ws_buf2_bytes_offset,
-                                 void* const __restrict__ indices_global) const
-    {
-        (void)p_src_global; // unused
-
-        void* const ws_buf2_global = ws_buf2_bytes_offset > 0 ? static_cast<void*>(static_cast<char*>(ws_buf1_global) + ws_buf2_bytes_offset) : nullptr;
-
-        switch (this->reduceImpl) {
-            case ReductionMethod_t::DirectThreadWise:
-                 this->Run_DirectThreadWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
-                           type_convert<srcDataType>{}(alpha),
-                           static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
-                           type_convert<dstDataType>{}(beta),
-                           static_cast<dstDataType* const __restrict__>(p_dst_global),
-                           static_cast<dstDataType* const __restrict__>(nullptr),
-                           static_cast<int* const __restrict__>(ws_buf2_global),
-                           static_cast<int* const __restrict__>(indices_global));
-		 break; 
-	    case ReductionMethod_t::DirectWarpWise:
-                 this->Run_DirectWarpWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
-                           type_convert<srcDataType>{}(alpha),
-                           static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
-                           type_convert<dstDataType>{}(beta),
-                           static_cast<dstDataType* const __restrict__>(p_dst_global),
-                           static_cast<dstDataType* const __restrict__>(nullptr),
-                           static_cast<int* const __restrict__>(ws_buf2_global),
-                           static_cast<int* const __restrict__>(indices_global));
-		 break; 
-	    case ReductionMethod_t::BlockWise:
-                 this->Run_BlockWise<false, true, src2dDescType, dst1dDescType>(src2dDesc, dst1dDesc,
-                           type_convert<srcDataType>{}(alpha),
-                           static_cast<const srcDataType* const __restrict__>(ws_buf1_global),
-                           type_convert<dstDataType>{}(beta),
-                           static_cast<dstDataType* const __restrict__>(p_dst_global),
-                           static_cast<dstDataType* const __restrict__>(nullptr),
-                           static_cast<int* const __restrict__>(ws_buf2_global),
-                           static_cast<int* const __restrict__>(indices_global));
-		 break; 
-	    default: 
-		 break; 
-        }; 
-
     };
 
     ReductionMethod_t reduceImpl; 

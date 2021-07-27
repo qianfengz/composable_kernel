@@ -132,7 +132,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded_12 *>((const void *)p_src2dDesc); 
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded *>((const void *)p_dst1dDesc); 
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -145,7 +145,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded_12 *>((const void *)p_src2dDesc); 
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc *>((const void *)p_dst1dDesc); 
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -158,7 +158,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc *>((const void *)p_src2dDesc); 
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded *>((const void *)p_dst1dDesc); 
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -171,7 +171,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc *>((const void *)p_src2dDesc); 
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc *>((const void *)p_dst1dDesc); 
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -186,7 +186,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded_34 *>((const void *)p_src2dDesc);
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded *>((const void *)p_dst1dDesc);
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -199,7 +199,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded_34 *>((const void *)p_src2dDesc);
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc *>((const void *)p_dst1dDesc);
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -212,7 +212,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc *>((const void *)p_src2dDesc); 
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded *>((const void *)p_dst1dDesc);
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
@@ -225,7 +225,7 @@ extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origRe
               const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc *>((const void *)p_src2dDesc);
               const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc *>((const void *)p_dst1dDesc);
 
-              gridwise_2d_reduce.Run_2(src2dDesc, dst1dDesc,  
+              gridwise_2d_reduce.Run(Number<1>{}, src2dDesc, dst1dDesc,  
                                     alpha,
                                     const_cast<const void* const __restrict__>(p_src_global),
                                     beta,
