@@ -261,6 +261,11 @@ struct unary_abs<half_t, hasDividing>
 template <>
 struct unary_abs<half_t, false>
 {
+    __device__ unary_abs(const int divider = 1)
+    {
+        (void)divider;
+    };	
+
     __device__ inline void operator()(half_t& a) const { a = static_cast<half_t>(__habs(a)); };
 };
 
@@ -278,6 +283,11 @@ struct unary_sqrt
 template <>
 struct unary_sqrt<half_t>
 {
+    __device__ unary_sqrt(const int divider = 1)
+    {
+        (void)divider;
+    };
+	
     __device__ inline void operator()(half_t& a) const { a = static_cast<half_t>(hsqrt(a)); };
 };
 
