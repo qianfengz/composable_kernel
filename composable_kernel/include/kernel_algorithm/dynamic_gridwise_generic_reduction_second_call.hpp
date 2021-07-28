@@ -23,10 +23,10 @@
  * SOFTWARE.
  *
  *******************************************************************************/
-#ifndef CK_DYNAMIC_GRIDWISE_GENERIC_REDUCTION_HPP
-#define CK_DYNAMIC_GRIDWISE_GENERIC_REDUCTION_HPP
+#ifndef CK_DYNAMIC_GRIDWISE_GENERIC_REDUCTION_SECOND_CALL_HPP
+#define CK_DYNAMIC_GRIDWISE_GENERIC_REDUCTION_SECOND_CALL_HPP
 
-#include "float_type.hpp"
+#include "data_type.hpp"
 
 #include "dynamic_gridwise_generic_2d_reduction_direct_threadwise.hpp"
 #include "dynamic_gridwise_generic_2d_reduction_direct_warpwise.hpp"

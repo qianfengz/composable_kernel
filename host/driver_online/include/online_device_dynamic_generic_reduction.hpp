@@ -1,7 +1,6 @@
 #include "device.hpp"
 #include "host_tensor.hpp"
 
-#include "online_driver_common.hpp"
 #include "online_reduce_common.hpp"
 #include "generic_reduction_tunable.hpp"
 
