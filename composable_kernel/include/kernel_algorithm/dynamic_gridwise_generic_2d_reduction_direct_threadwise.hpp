@@ -26,9 +26,7 @@
 #ifndef CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
 #define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_DIRECT_THREADWISE_HPP
 
-#define HIP_ENABLE_PRINTF
-
-#include "float_type.hpp"
+#include "data_type.hpp"
 #include "reduction_common.hpp"
 #include "dynamic_reduction_operator.hpp"
 #include "dynamic_reduction_functions_threadwise.hpp"
@@ -40,9 +38,9 @@ namespace ck {
 template <index_t BlockSize,
           typename srcDataType,
           typename dstDataType,
+          typename compType,
           typename src2dDescType,
           typename dst1dDescType,
-          typename compType,
           ReduceTensorOp_t op,
           NanPropagation_t nanPropaOpt,
           ReduceTensorIndices_t reduceIndicesOpt,
@@ -85,14 +83,14 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global)
     {
-        const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        auto dst_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        auto dst_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
-        StaticBuffer<AddressSpace::Vgpr, compType, GredThreadBufferLength> in_thread_buf;  
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, GredThreadBufferLength> in_thread_buf;  
 
         using threadwise_reduce = ThreadReduce<decltype(in_thread_buf), opReduce, nanPropaOpt>;
 
-        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal       = opReduce::GetZeroVal();
 
@@ -161,7 +159,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    1,
                                                                    true>(dst1dDesc, make_multi_index(thread_global_1d_id));
 
-            StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf; 
+            StaticBuffer<AddressSpaceEnum_t::Vgpr, dstDataType, 1> priorDstValue_buf; 
 
             threadwise_dst_load.Run(dst1dDesc, dst_global_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 
@@ -177,7 +175,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-								   InMemoryDataOperation::Set,
+								   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    true>(dst1dDesc, make_multi_index(thread_global_1d_id));
 									   
@@ -191,16 +189,16 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                     dstDataType* const __restrict__ p_dst_global,
                                     int* const __restrict__ indices_global)
     {
-        const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
-        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        auto dst_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-        StaticBuffer<AddressSpace::Vgpr, compType, GredThreadBufferLength> in_thread_buf;  
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, GredThreadBufferLength> in_thread_buf;  
 
         using threadwise_reduce = ThreadReduce<decltype(in_thread_buf), opReduce, nanPropaOpt>;
 
-        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
-        StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, int, 1> accuIndex_buf;
 	    
         auto zeroVal       = opReduce::GetZeroVal();
         
@@ -271,7 +269,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(thread_global_1d_id));
 
-            StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf; 
+            StaticBuffer<AddressSpaceEnum_t::Vgpr, dstDataType, 1> priorDstValue_buf; 
 
             threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 
@@ -287,7 +285,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(thread_global_1d_id));
 
@@ -300,7 +298,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(thread_global_1d_id));
 	
@@ -318,18 +316,18 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
     {
         (void)origReduceLen; 
 
-        const auto src_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, src2dDesc.GetElementSpaceSize());
-        const auto src_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, src2dDesc.GetElementSpaceSize());
-        auto dst_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
-        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
+        const auto src_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_values_global, src2dDesc.GetElementSpaceSize());
+        const auto src_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_indices_global, src2dDesc.GetElementSpaceSize());
+        auto dst_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
+        auto dst_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
-        StaticBuffer<AddressSpace::Vgpr, compType, GredThreadBufferLength> in_thread_val_buf;  
-        StaticBuffer<AddressSpace::Vgpr, int, GredThreadBufferLength> in_thread_idx_buf;  
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, GredThreadBufferLength> in_thread_val_buf;  
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, int, GredThreadBufferLength> in_thread_idx_buf;  
 
         using threadwise_reduce = ThreadReduceWithIndicesInput<decltype(in_thread_val_buf), decltype(in_thread_idx_buf), opReduce, nanPropaOpt>;
 
-        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
-        StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, int, 1> accuIndex_buf;
 
         auto zeroVal       = opReduce::GetZeroVal();
 
@@ -405,7 +403,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    false>(dst1dDesc, make_multi_index(thread_global_1d_id));
 		
 
-            StaticBuffer<AddressSpace::Vgpr, dstDataType, 1> priorDstValue_buf;
+            StaticBuffer<AddressSpaceEnum_t::Vgpr, dstDataType, 1> priorDstValue_buf;
 
             threadwise_dst_load.Run(dst1dDesc, dst_global_val_buf, ReducedDataDesc, make_tuple(I0), priorDstValue_buf);
 	    
@@ -421,7 +419,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(thread_global_1d_id));
 
@@ -434,7 +432,7 @@ struct GridwiseReduction_xy_to_x_direct_threadwise
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    false>(dst1dDesc, make_multi_index(thread_global_1d_id));
 

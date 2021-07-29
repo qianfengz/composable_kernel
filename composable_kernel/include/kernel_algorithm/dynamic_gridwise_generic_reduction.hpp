@@ -26,7 +26,7 @@
 #ifndef CK_DYNAMIC_GRIDWISE_GENERIC_REDUCTION_HPP
 #define CK_DYNAMIC_GRIDWISE_GENERIC_REDUCTION_HPP
 
-#include "float_type.hpp"
+#include "data_type.hpp"
 
 #include "dynamic_gridwise_generic_2d_reduction_direct_threadwise.hpp"
 #include "dynamic_gridwise_generic_2d_reduction_direct_warpwise.hpp"
@@ -74,9 +74,9 @@ struct Gridwise2dReduction
             using gridwise_reduce = GridwiseReduction_xy_to_x_direct_threadwise<BlockSize,
                                                                                 srcDataType,
                                                                                 dstDataType,
+                                                                                compType,
                                                                                 src2dDescType,
                                                                                 dst1dDescType,
-                                                                                compType,
                                                                                 op,
                                                                                 nanPropaOpt,
                                                                                 reduceIndicesOpt,
@@ -108,9 +108,9 @@ struct Gridwise2dReduction
             using gridwise_reduce = GridwiseReduction_xy_to_x_direct_warpwise<BlockSize,
                                                                               srcDataType,
                                                                               dstDataType,
+                                                                              compType,
                                                                               src2dDescType,
                                                                               dst1dDescType,
-                                                                              compType,
                                                                               op,
                                                                               nanPropaOpt,
                                                                               reduceIndicesOpt,
@@ -142,9 +142,9 @@ struct Gridwise2dReduction
             using gridwise_reduce = GridwiseReduction_xy_to_x_blockwise<BlockSize,
                                                                         srcDataType,
                                                                         dstDataType,
+                                                                        compType,
                                                                         src2dDescType,
                                                                         dst1dDescType,
-                                                                        compType,
                                                                         op,
                                                                         nanPropaOpt,
                                                                         reduceIndicesOpt,
@@ -177,9 +177,9 @@ struct Gridwise2dReduction
             using gridwise_reduce = GridwiseReduction_xy_to_x_multiblock<BlockSize,
                                                                          srcDataType,
                                                                          dstDataType,
+                                                                         compType,
                                                                          src2dDescType,
                                                                          dst1dDescType,
-                                                                         compType,
                                                                          op,
                                                                          nanPropaOpt,
                                                                          reduceIndicesOpt,

@@ -26,7 +26,7 @@
 #ifndef CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
 #define CK_DYNAMIC_GRIDWISE_GENERIC_2D_REDUCTION_MULTIBLOCK_HPP
 
-#include "float_type.hpp"
+#include "data_type.hpp"
 #include "reduction_common.hpp"
 #include "dynamic_reduction_operator.hpp"
 #include "dynamic_reduction_functions_blockwise.hpp"
@@ -38,9 +38,9 @@ namespace ck {
 template <index_t BlockSize,
           typename srcDataType,
           typename dstDataType, // not used together with the beta input
+          typename compType,
           typename src2dDescType,
           typename dst1dDescType,
-          typename compType,
           ReduceTensorOp_t op,
           NanPropagation_t nanPropaOpt,
           ReduceTensorIndices_t reduceIndicesOpt,
@@ -87,11 +87,11 @@ struct GridwiseReduction_xy_to_x_multiblock
         // LDS
         __shared__ compType p_in_block_buffer[BlockBufferSize];
 
-        const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        auto workspace_global_buf = make_dynamic_buffer<AddressSpace::Global>(workspace_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        auto workspace_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(workspace_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
 
-        auto in_block_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_buffer, BlockBufferSize);
-        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
+        auto in_block_buf = make_dynamic_buffer<AddressSpaceEnum_t::Lds>(p_in_block_buffer, BlockBufferSize);
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
 
         auto zeroVal = opReduce::GetZeroVal();
         accuValue_buf(I0) = zeroVal;
@@ -116,7 +116,7 @@ struct GridwiseReduction_xy_to_x_multiblock
 
         auto blockwise_src_load =
             BlockwiseDynamicTensorSliceTransfer_v4<BlockSize,
-                                                   InMemoryDataOperation::Set,
+                                                   InMemoryDataOperationEnum_t::Set,
                                                    Sequence<1, BlockBufferSize>,
                                                    ThreadSliceLengths,
                                                    ThreadClusterLengths,
@@ -172,14 +172,14 @@ struct GridwiseReduction_xy_to_x_multiblock
         {
             auto threadwise_workspace_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
-                                                                   compType,
+                                                                   srcDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
                                                                    Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    true>(workspace_desc, make_multi_index(block_global_id));
 
@@ -201,14 +201,14 @@ struct GridwiseReduction_xy_to_x_multiblock
         __shared__ compType p_in_block_values_buffer[BlockBufferSize];
         __shared__ int p_in_block_indices_buffer[BlockBufferSize];
 
-        const auto src_global_buf = make_dynamic_buffer<AddressSpace::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
-        auto workspace_global_val_buf = make_dynamic_buffer<AddressSpace::Global>(ws_values_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
-        auto workspace_global_idx_buf = make_dynamic_buffer<AddressSpace::Global>(ws_indices_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        auto workspace_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_values_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
+        auto workspace_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_indices_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
 
-        auto in_block_val_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_values_buffer, BlockBufferSize);
-        auto in_block_idx_buf = make_dynamic_buffer<AddressSpace::Lds>(p_in_block_indices_buffer, BlockBufferSize);
-        StaticBuffer<AddressSpace::Vgpr, compType, 1> accuValue_buf;
-        StaticBuffer<AddressSpace::Vgpr, int, 1> accuIndex_buf;
+        auto in_block_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Lds>(p_in_block_values_buffer, BlockBufferSize);
+        auto in_block_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Lds>(p_in_block_indices_buffer, BlockBufferSize);
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
+        StaticBuffer<AddressSpaceEnum_t::Vgpr, int, 1> accuIndex_buf;
 
         auto zeroVal = opReduce::GetZeroVal();
         accuValue_buf(I0) = zeroVal;
@@ -234,7 +234,7 @@ struct GridwiseReduction_xy_to_x_multiblock
 
         auto blockwise_src_load =
             BlockwiseDynamicTensorSliceTransfer_v4<BlockSize,
-                                                   InMemoryDataOperation::Set,
+                                                   InMemoryDataOperationEnum_t::Set,
                                                    Sequence<1, BlockBufferSize>,
                                                    ThreadSliceLengths,
                                                    ThreadClusterLengths,
@@ -302,14 +302,14 @@ struct GridwiseReduction_xy_to_x_multiblock
         {
             auto threadwise_workspace_val_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
-                                                                   compType,
+                                                                   srcDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
                                                                    Sequence<1>,
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    true>(workspace_desc, make_multi_index(block_global_id));
 
@@ -322,7 +322,7 @@ struct GridwiseReduction_xy_to_x_multiblock
                                                                    Sequence<0>,
                                                                    0,
                                                                    1,
-                                                                   InMemoryDataOperation::Set,
+                                                                   InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    true>(workspace_desc, make_multi_index(block_global_id));
 

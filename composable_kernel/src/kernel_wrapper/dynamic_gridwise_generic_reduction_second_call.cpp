@@ -67,7 +67,7 @@ extern "C" __global__ void gridwise_generic_reduce_2_prepare(int reduceImpl2, in
       gridwise_generic_reduce_pad_and_store(static_cast<ReductionMethod_t>(reduceImpl2), GridSize, 0, workspace_2d_desc, one_dim_dstDesc, p_src2dDesc, p_dst1dDesc, p_src_use_padding, p_dst_use_padding); 
 };
 
-extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origReduceLen, const void __CONSTANT__ *p_src2dDesc, const void __CONSTANT__ *p_dst1dDesc, 
+extern "C" __global__ void gridwise_generic_reduce_2(int reduceImpl2, int origReduceLen, const void CONSTANT *p_src2dDesc, const void CONSTANT *p_dst1dDesc, 
 		                                     const bool *p_src_use_padding, const bool *p_dst_use_padding,
 		                                     float alpha,
                                                      const void* __restrict__ p_src_global,

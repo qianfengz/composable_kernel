@@ -1,5 +1,3 @@
-#define  HIP_EANBLE_PRINTF
-
 #include "config.hpp"
 #include "number.hpp"
 #include "sequence.hpp"
@@ -109,7 +107,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int reduceImpl, int
 
 }; 
 
-extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origReduceLen, int BlkGroupSize, const void __CONSTANT__ *p_src2dDesc, const void __CONSTANT__ *p_dst1dDesc,
+extern "C" __global__ void gridwise_generic_reduce_1(int reduceImpl, int origReduceLen, int BlkGroupSize, const void CONSTANT *p_src2dDesc, const void CONSTANT *p_dst1dDesc,
 	                                             const bool *p_src_use_padding, const bool *p_dst_use_padding,
 		                                     float alpha,
                                                      const void* __restrict__ p_src_global,

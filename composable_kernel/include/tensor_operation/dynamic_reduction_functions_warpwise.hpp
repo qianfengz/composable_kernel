@@ -26,7 +26,7 @@
 #ifndef CK_DYNAMIC_REDUCTION_FUNCTIONS_WARPWISE_HPP
 #define CK_DYNAMIC_REDUCTION_FUNCTIONS_WARPWISE_HPP
 
-#include "float_type.hpp"
+#include "data_type.hpp"
 
 #include "reduction_common.hpp"
 #include "dynamic_reduction_operator.hpp"

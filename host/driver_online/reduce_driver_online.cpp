@@ -17,7 +17,6 @@
 #include "host_conv.hpp"
 #include "device_tensor.hpp"
 #include "online_device_dynamic_generic_reduction.hpp"
-#include "online_driver_common.hpp"
 #include "online_reduce_common.hpp"
 #include "host_generic_reduction.hpp"
 
