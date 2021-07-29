@@ -37,9 +37,9 @@ namespace ck {
 template <index_t BlockSize,
           typename srcDataType,
           typename dstDataType, // not used together with the beta input
+          typename compType,
           typename src2dDescType,
           typename dst1dDescType,
-          typename compType,
           ReduceTensorOp_t op,
           NanPropagation_t nanPropaOpt,
           ReduceTensorIndices_t reduceIndicesOpt,
@@ -171,7 +171,7 @@ struct GridwiseReduction_xy_to_x_multiblock
         {
             auto threadwise_workspace_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
-                                                                   compType,
+                                                                   srcDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
                                                                    Sequence<1>,
@@ -301,7 +301,7 @@ struct GridwiseReduction_xy_to_x_multiblock
         {
             auto threadwise_workspace_val_store = ThreadwiseDynamicTensorSliceTransfer_v1r3<
                                                                    compType,
-                                                                   compType,
+                                                                   srcDataType,
                                                                    decltype(ReducedDataDesc),
                                                                    decltype(workspace_desc),
                                                                    Sequence<1>,
