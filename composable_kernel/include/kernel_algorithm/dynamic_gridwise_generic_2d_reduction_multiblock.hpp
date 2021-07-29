@@ -83,16 +83,17 @@ struct GridwiseReduction_xy_to_x_multiblock
         (void)alpha; // unused
         (void)beta;  // unused
 
+        auto zeroVal = opReduce::GetZeroVal();
+
         // LDS
         __shared__ compType p_in_block_buffer[BlockBufferSize];
 
-        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize(), type_convert<float>{}(zeroVal));
         auto workspace_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(workspace_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
 
         auto in_block_buf = make_dynamic_buffer<AddressSpaceEnum_t::Lds>(p_in_block_buffer, BlockBufferSize);
         StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
 
-        auto zeroVal = opReduce::GetZeroVal();
         accuValue_buf(I0) = zeroVal;
 
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
@@ -196,11 +197,13 @@ struct GridwiseReduction_xy_to_x_multiblock
         (void)alpha; // unused
         (void)beta;  // unused
 
+        auto zeroVal = opReduce::GetZeroVal();
+
         // LDS
         __shared__ compType p_in_block_values_buffer[BlockBufferSize];
         __shared__ int p_in_block_indices_buffer[BlockBufferSize];
 
-        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize(), type_convert<float>{}(zeroVal));
         auto workspace_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_values_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
         auto workspace_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_indices_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
 
@@ -209,7 +212,6 @@ struct GridwiseReduction_xy_to_x_multiblock
         StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpaceEnum_t::Vgpr, int, 1> accuIndex_buf;
 
-        auto zeroVal = opReduce::GetZeroVal();
         accuValue_buf(I0) = zeroVal;
         accuIndex_buf(I0) = 0; 
 	
