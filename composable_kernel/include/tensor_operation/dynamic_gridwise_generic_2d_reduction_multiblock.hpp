@@ -61,25 +61,24 @@ struct GridwiseReduction_xy_to_x_multiblock
     
     static constexpr auto I0 = Number<0>{}; 
 
-    __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
+    template <int RunId>
+    __device__ static void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
 		        srcDataType alpha,
                         const srcDataType* const __restrict__ p_src_global,
                         dstDataType beta,
-                        srcDataType* const __restrict__ workspace_global,
-                        int* const __restrict__ ws_indices_global)
-    {
-        if constexpr(need_indices) 	
-            RunImpl2(src2dDesc, dst1dDesc, origReduceLen, BlkGroupSize, alpha, p_src_global, beta, workspace_global, ws_indices_global);
-	else
-	    RunImpl1(src2dDesc, dst1dDesc, origReduceLen, BlkGroupSize, alpha, p_src_global, beta, workspace_global); 
-    };
+                        srcDataType* const __restrict__ ws_values_global,
+                        int* const __restrict__ ws_indices_global);
 
-    __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
+    template <>
+    __device__ static void Run<1>(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
 		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
-                                    srcDataType* const __restrict__ workspace_global)
+                                    srcDataType* const __restrict__ ws_values_global,
+                                    int* const __restrict__ ws_indices_global)
     {
+        (void) ws_indices_global; 
+
         (void)alpha; // unused
         (void)beta;  // unused
 
@@ -89,7 +88,7 @@ struct GridwiseReduction_xy_to_x_multiblock
         __shared__ compType p_in_block_buffer[BlockBufferSize];
 
         const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize(), type_convert<float>{}(zeroVal));
-        auto workspace_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(workspace_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
+        auto workspace_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_values_global, dst1dDesc.GetLength(I0) * BlkGroupSize);
 
         auto in_block_buf = make_dynamic_buffer<AddressSpaceEnum_t::Lds>(p_in_block_buffer, BlockBufferSize);
         StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
@@ -187,7 +186,8 @@ struct GridwiseReduction_xy_to_x_multiblock
         }
     };
 
-    __device__ static void RunImpl2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
+    template <>
+    __device__ static void Run<2>(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, int BlkGroupSize,
 		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
