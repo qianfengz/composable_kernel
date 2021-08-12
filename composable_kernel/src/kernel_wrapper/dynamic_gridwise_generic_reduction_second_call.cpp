@@ -5,7 +5,7 @@
 #include "sequence.hpp"
 #include "dynamic_tensor_descriptor_helper.hpp"
 #include "reduction_common.hpp"
-#include "dynamic_gridwise_generic_reduction.hpp"
+#include "dynamic_gridwise_generic_reduction_method_chooser.hpp"
 #include "dynamic_gridwise_generic_reduction_wrapper_common.hpp"
 
 using namespace ck;

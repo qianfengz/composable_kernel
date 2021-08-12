@@ -26,8 +26,6 @@
 #ifndef CK_REDUCTION_COMMON_HPP
 #define CK_REDUCTION_COMMON_HPP
 
-#include "data_type.hpp"
-
 // this enumerate should be synchronized with include/miopen/reduce_common.hpp
 namespace ck {
 enum class ReductionMethod_t

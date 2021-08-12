@@ -51,6 +51,9 @@ struct Gridwise2dReduction
     static constexpr auto nanPropaOpt      = static_cast<NanPropagation_t>(nanPropaOpt_I);
     static constexpr auto reduceIndicesOpt = static_cast<ReduceTensorIndices_t>(reduceIndicesOpt_I);
 
+    static constexpr bool indexable = reduce_binary_operator<compType, op>::indexable;
+    static constexpr bool need_indices = indexable && (reduceIndicesOpt != ReduceTensorIndices_t::NO_INDICES);    
+
     __device__ Gridwise2dReduction(int reduceImpl_, int origReduceLen_, int BlkGroupSize_)
     {
 	reduceImpl = static_cast<ReductionMethod_t>(reduceImpl_); 
@@ -83,7 +86,8 @@ struct Gridwise2dReduction
                                                                                 isFirstCall,
                                                                                 isLastCall,
                                                                                 GredThreadBufferLength>; 
-            gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, 
+            constexpr int RunId = need_indices? (isFirstCall? 2 : 3) : 1;  
+	    gridwise_reduce::template Run<RunId>(src2dDesc, dst1dDesc, this->origReduceLen, 
 			          alpha,
                                   p_src_global,
                                   beta,
@@ -117,7 +121,8 @@ struct Gridwise2dReduction
                                                                               isFirstCall,
                                                                               isLastCall,
                                                                               GredAccessesPerThreadInWarp>; 
-            gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, 
+            constexpr int RunId = need_indices? (isFirstCall? 2 : 3) : 1;  
+	    gridwise_reduce::template Run<RunId>(src2dDesc, dst1dDesc, this->origReduceLen, 
 			          alpha,
                                   p_src_global,
                                   beta,
@@ -151,7 +156,8 @@ struct Gridwise2dReduction
                                                                         isFirstCall,
                                                                         isLastCall,
                                                                         GredAccessesPerThreadInBlock>; 
-            gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen,
+            constexpr int RunId = need_indices? (isFirstCall? 2 : 3) : 1;  
+	    gridwise_reduce::template Run<RunId>(src2dDesc, dst1dDesc, this->origReduceLen,
 			          alpha,
                                   p_src_global,
                                   beta,
@@ -184,8 +190,8 @@ struct Gridwise2dReduction
                                                                          nanPropaOpt,
                                                                          reduceIndicesOpt,
                                                                          GredAccessesPerThreadInBlock>; 
-
-            gridwise_reduce{}.Run(src2dDesc, dst1dDesc, this->origReduceLen, this->BlkGroupSize,
+            constexpr int RunId = need_indices? 2 : 1;  
+	    gridwise_reduce::template Run<RunId>(src2dDesc, dst1dDesc, this->origReduceLen, this->BlkGroupSize,
 			          alpha,
                                   p_src_global,
                                   beta,

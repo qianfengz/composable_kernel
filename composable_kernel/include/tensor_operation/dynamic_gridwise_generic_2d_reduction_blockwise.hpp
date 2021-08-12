@@ -49,9 +49,6 @@ template <index_t BlockSize,
           index_t GredAccessesPerThreadInBlock>
 struct GridwiseReduction_xy_to_x_blockwise
 {
-    static constexpr bool indexable = reduce_binary_operator<compType, op>::indexable;
-    static constexpr bool need_indices = indexable && (reduceIndicesOpt != ReduceTensorIndices_t::NO_INDICES);
-
     using opReduce = typename reduce_binary_operator<compType, op>::opType;
     using preUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::preUnaryOp;
     using posUnaryOpType = typename reduce_unary_operator<compType, op, isFirstCall, isLastCall>::posUnaryOp;
@@ -63,40 +60,38 @@ struct GridwiseReduction_xy_to_x_blockwise
 
     static constexpr auto I0 = Number<0>{}; 
 
-    __device__ void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
+    template <int RunId>
+    __device__ static void Run(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
 		        srcDataType alpha,
                         const srcDataType* const __restrict__ p_src_global,
                         dstDataType beta,
                         dstDataType* const __restrict__ p_dst_global,
                         const int* const __restrict__ ws_indices_global,
-                        int* const __restrict__ indices_global)
-    {
-        if constexpr(need_indices) {	
-            if constexpr(isFirstCall) 
-                RunImpl2(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, indices_global);
-	    else
-                RunImpl3(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global, ws_indices_global, indices_global);
-	}
-	else
-            RunImpl1(src2dDesc, dst1dDesc, origReduceLen, alpha, p_src_global, beta, p_dst_global);
-    };
+                        int* const __restrict__ indices_global);
 
-    __device__ static void RunImpl1(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen,
+    template <>
+    __device__ static void Run<1>(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen,
 		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
-                                    dstDataType* const __restrict__ p_dst_global)
+                                    dstDataType* const __restrict__ p_dst_global,
+                                    const int* const __restrict__ ws_indices_global,
+                                    int* const __restrict__ indices_global)
     {
+        (void) ws_indices_global;
+	(void) indices_global;
+
         // LDS
         __shared__ compType p_in_block_buffer[BlockBufferSize];
         
-        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        auto zeroVal       = opReduce::GetZeroVal();
+
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize(), type_convert<float>{}(zeroVal));
         auto dst_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
 
         auto in_block_buf = make_dynamic_buffer<AddressSpaceEnum_t::Lds>(p_in_block_buffer, BlockBufferSize);	
 	StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
 
-        auto zeroVal       = opReduce::GetZeroVal();
         accuValue_buf(I0) = zeroVal;
 
         const auto toReduceLength = src2dDesc.GetLength(Number<1>{});
@@ -212,18 +207,24 @@ struct GridwiseReduction_xy_to_x_blockwise
         }
     };
 
-    __device__ static void RunImpl2(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
+    template <>
+    __device__ static void Run<2>(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
 		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ p_src_global,
                                     dstDataType beta,
                                     dstDataType* const __restrict__ p_dst_global,
+                                    const int* const __restrict__ ws_indices_global,
                                     int* const __restrict__ indices_global)
     {
+        (void) ws_indices_global;
+
         // LDS
         __shared__ compType p_in_block_buffer[BlockBufferSize];
         __shared__ int block_indices_buffer[BlockBufferSize];
 
-        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize());
+        auto zeroVal       = opReduce::GetZeroVal();
+
+        const auto src_global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_src_global, src2dDesc.GetElementSpaceSize(), type_convert<float>{}(zeroVal));
         auto dst_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
         auto dst_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
 
@@ -233,8 +234,6 @@ struct GridwiseReduction_xy_to_x_blockwise
         StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpaceEnum_t::Vgpr, int, 1> accuIndex_buf;
 	
-        auto zeroVal       = opReduce::GetZeroVal();
-
         accuValue_buf(I0) = zeroVal;
         accuIndex_buf(I0) = 0;
 
@@ -372,7 +371,8 @@ struct GridwiseReduction_xy_to_x_blockwise
         }
     };
 
-    __device__ static void RunImpl3(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
+    template <>
+    __device__ static void Run<3>(const src2dDescType &src2dDesc, const dst1dDescType &dst1dDesc, int origReduceLen, 
 		                    srcDataType alpha,
                                     const srcDataType* const __restrict__ ws_values_global,
                                     dstDataType beta,
@@ -386,7 +386,9 @@ struct GridwiseReduction_xy_to_x_blockwise
         __shared__ compType p_in_block_buffer[BlockBufferSize];
         __shared__ int block_indices_buffer[BlockBufferSize];
 
-        const auto src_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_values_global, src2dDesc.GetElementSpaceSize());
+        auto zeroVal       = opReduce::GetZeroVal();
+
+        const auto src_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_values_global, src2dDesc.GetElementSpaceSize(), type_convert<float>{}(zeroVal));
         const auto src_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(ws_indices_global, src2dDesc.GetElementSpaceSize());	
         auto dst_global_val_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(p_dst_global, dst1dDesc.GetElementSpaceSize());
         auto dst_global_idx_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(indices_global, dst1dDesc.GetElementSpaceSize());
@@ -396,8 +398,6 @@ struct GridwiseReduction_xy_to_x_blockwise
 
         StaticBuffer<AddressSpaceEnum_t::Vgpr, compType, 1> accuValue_buf;
         StaticBuffer<AddressSpaceEnum_t::Vgpr, int, 1> accuIndex_buf;
-
-        auto zeroVal       = opReduce::GetZeroVal();
 
         accuValue_buf(I0) = zeroVal;
         accuIndex_buf(I0) = 0;

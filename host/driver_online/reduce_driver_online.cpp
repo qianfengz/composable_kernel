@@ -17,6 +17,7 @@
 #include "host_conv.hpp"
 #include "device_tensor.hpp"
 #include "online_device_dynamic_generic_reduction.hpp"
+#include "online_driver_common.hpp"
 #include "online_reduce_common.hpp"
 #include "host_generic_reduction.hpp"
 
@@ -148,7 +149,7 @@ static vector<float> scales;
 static ReduceTensorOp_t reduceOp = ReduceTensorOp_t::REDUCE_TENSOR_ADD;
 static appDataType_t compTypeId = appFloat;
 static bool compType_assigned = false;  
-static NanPropagation_t nanOpt = NanPropagation_t::NOT_PROPAGATE_NAN;;
+static NanPropagation_t nanOpt = NanPropagation_t::NOT_PROPAGATE_NAN;
 static ReduceTensorIndices_t indicesOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES;
 static bool do_logging=false;
 static bool do_verification=false;
@@ -156,6 +157,8 @@ static bool do_dumpout=false;
 
 static int init_method;
 static int nrepeat;
+
+static bool need_indices=false; 
 
 static void check_cmdline_arguments(int argc, char *argv[])
 {
@@ -260,6 +263,10 @@ static void check_cmdline_arguments(int argc, char *argv[])
 	 scales.push_back(1.0f); 
 	 scales.push_back(0.0f); 
     }; 
+
+    if ( (reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MIN || reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MAX || reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_AMAX)
+	 && indicesOpt != ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES )
+	 need_indices = true; 
 };
 
 template <typename T>
@@ -276,6 +283,19 @@ static void dumpBufferToFile(const char* fileName, T* data, size_t dataNumItems)
     {
 	std::cout << "Could not open file " << fileName << " for writing" << std::endl; 
     }
+}
+
+static void check_indices(const Tensor<int>& ref, const Tensor<int>& result)
+{
+    for(int i = 0; i < ref.mData.size(); ++i)
+    {
+         if ( ref.mData[i] != result.mData[i] ) { 
+              std::cerr << std::endl << "Indices different at position " << i << " (ref: " << ref.mData[i] << ", result: " << result.mData[i] << ")" << std::endl; 
+	      break; 
+	 }; 
+    }
+
+    std::cout << std::endl << "Indices result is completely acccurate!" << std::endl; 
 }
 
 template<typename dataType, typename compType>
@@ -388,6 +408,9 @@ static void do_reduce_testing(olCompile::Handle* handle)
         hostReduce.Run(alpha, in.mData.data(), beta, out_host.mData.data(), out_indices_host.mData.data()); 
 
         check_error(out_host, out_dev);
+
+        if (need_indices) 
+	    check_indices(out_indices_host, out_indices_dev); 
 
         if(do_logging)
         {
