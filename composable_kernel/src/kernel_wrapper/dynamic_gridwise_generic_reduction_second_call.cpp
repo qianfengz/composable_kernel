@@ -45,7 +45,7 @@ static_assert(invariantDims::Size() > 0 || dstDims == 1, "If all source dimensio
 constexpr bool reduceAllDims = (invariantDims::Size() == 0) ? true : false; 
 
 extern "C" __global__ void gridwise_generic_reduce_2_prepare(int reduceImpl2, int GridSize, int BlkGroupSize, 
-	                                                     const index_t * __restrict__ srcLengths, const index_t *srcStrides, const index_t *dstLengths, const index_t *dstStrides, 
+	                                                     const int * __restrict__ srcLengths, const int *srcStrides, const int *dstLengths, const int *dstStrides, 
 		                                             void *p_src2dDesc, void *p_dst1dDesc, bool *p_src_use_padding, bool *p_dst_use_padding)
 {
       const auto tupleDstLengths = make_tuple_from_array(dstLengths, Number<dstDims>{});

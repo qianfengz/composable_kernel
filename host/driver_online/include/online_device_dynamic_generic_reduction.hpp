@@ -245,7 +245,7 @@ void device_dynamic_generic_reduction_olc(
     float alpha, 
     float beta,
     const tunable_dyn_generic_reduction* tunable,
-    ck::index_t nrepeat)
+    int nrepeat)
 {
     using namespace ck;
     using namespace detail_dyn_generic_reduction;
@@ -272,19 +272,19 @@ void device_dynamic_generic_reduction_olc(
     auto outLengths = out.mDesc.GetLengths(); 
     auto outStrides = out.mDesc.GetStrides(); 
 
-    std::vector<index_t> lens_buf(4096/sizeof(index_t));   // allocate one page  
+    std::vector<int> lens_buf(4096/sizeof(int));   // allocate one page  
 
     for (int i=0; i < inLengths.size(); i++) 
-         lens_buf[0+i] = static_cast<index_t>(inLengths[i]); 
+         lens_buf[0+i] = static_cast<int>(inLengths[i]); 
 
     for (int i=0; i < inStrides.size(); i++) 
-         lens_buf[6+i] = static_cast<index_t>(inStrides[i]); 
+         lens_buf[6+i] = static_cast<int>(inStrides[i]); 
 
     for (int i=0; i < outLengths.size(); i++) 
-         lens_buf[12+i] = static_cast<index_t>(outLengths[i]); 
+         lens_buf[12+i] = static_cast<int>(outLengths[i]); 
 
     for (int i=0; i < outStrides.size(); i++)
-	 lens_buf[18+i] = static_cast<index_t>(outStrides[i]); 
+	 lens_buf[18+i] = static_cast<int>(outStrides[i]); 
 
     auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
 
@@ -302,10 +302,10 @@ void device_dynamic_generic_reduction_olc(
     void *p_dev_dst1dDesc = (char *)workspace2.GetDeviceBuffer() + 2048;
     bool *p_dev_src_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 ); 
     bool *p_dev_dst_use_padding = reinterpret_cast<bool *>( (char *)workspace2.GetDeviceBuffer() + 3072 + sizeof(size_t) ); 
-    index_t *p_dev_inLengths = (index_t *)workspace2.GetDeviceBuffer(); 
-    index_t *p_dev_inStrides = &p_dev_inLengths[6]; 
-    index_t *p_dev_outLengths = &p_dev_inLengths[12]; 
-    index_t *p_dev_outStrides = &p_dev_inLengths[18]; 
+    int *p_dev_inLengths = (int *)workspace2.GetDeviceBuffer(); 
+    int *p_dev_inStrides = &p_dev_inLengths[6]; 
+    int *p_dev_outLengths = &p_dev_inLengths[12]; 
+    int *p_dev_outStrides = &p_dev_inLengths[18]; 
 
     workspace2.ToDevice(static_cast<const void*>(lens_buf.data()));  
 
@@ -389,7 +389,7 @@ void device_dynamic_generic_reduction_olc(
     std::vector<float> kernel3_times;
     std::vector<float> kernel4_times;
 
-    for(index_t i = 0; i < nrepeat; ++i)
+    for(int i = 0; i < nrepeat; ++i)
     {
         KernelTimer timer1, timer2;
 
