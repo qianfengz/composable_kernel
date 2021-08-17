@@ -465,7 +465,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         std::string kernel_name1 =
             "gridwise_generic_reduce_1_prepare_" + getReductionMethodStr(reduceImpl);
         std::string network_config_1 =
-            network_config + "_1_P_" + std::to_string(static_cast<int>(reduceImpl));
+            network_config + "_1_P_" + std::to_string(static_cast<int>(reduceImpl)) +
+            std::to_string(use_padding.first) + std::to_string(use_padding.second);
 
         timer1.Start();
         handle->AddKernel(
@@ -501,7 +502,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         timer1.End();
 
         kernel_name1     = "gridwise_generic_reduce_1_" + getReductionMethodStr(reduceImpl);
-        network_config_1 = network_config + "_1_" + std::to_string(static_cast<int>(reduceImpl));
+        network_config_1 = network_config + "_1_" + std::to_string(static_cast<int>(reduceImpl)) +
+                           std::to_string(use_padding.first) + std::to_string(use_padding.second);
 
         timer2.Start();
         handle->AddKernel(
@@ -532,25 +534,26 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             const std::vector<size_t> vgd2_2 = {
                 static_cast<size_t>(GridSize_2) * tunable->BlockSize, size_t{1}, size_t{1}};
             auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2);
-            auto use_padding = get_padding_need(reduceImpl2,
-                                                invariantLength,
-                                                toReduceLength_2,
-                                                GridSize,
-                                                tunable->BlockSize,
-                                                BlkGroupSize,
-                                                tunable);
+            auto use_padding2 = get_padding_need(reduceImpl2,
+                                                 invariantLength,
+                                                 toReduceLength_2,
+                                                 GridSize_2,
+                                                 tunable->BlockSize,
+                                                 0,
+                                                 tunable);
 
             std::string param2 =
                 param + " -DCK_PARAM_REDUCE_IMPL=" + std::to_string(static_cast<int>(reduceImpl2)) +
-                " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding.first) +
-                " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding.second);
+                " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding2.first) +
+                " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding2.second);
 
             std::string program_name2 = "dynamic_gridwise_generic_reduction_second_call_" +
                                         getReductionMethodStr(reduceImpl2) + ".cpp";
             std::string kernel_name2 =
                 "gridwise_generic_reduce_2_prepare_" + getReductionMethodStr(reduceImpl2);
             std::string network_config_2 =
-                network_config + "_2_P_" + std::to_string(static_cast<int>(reduceImpl2));
+                network_config + "_2_P_" + std::to_string(static_cast<int>(reduceImpl2)) +
+                std::to_string(use_padding2.first) + std::to_string(use_padding2.second);
 
             timer1.Start();
             handle->AddKernel(
@@ -575,7 +578,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
             kernel_name2 = "gridwise_generic_reduce_2_" + getReductionMethodStr(reduceImpl2);
             network_config_2 =
-                network_config + "_2_" + std::to_string(static_cast<int>(reduceImpl2));
+                network_config + "_2_" + std::to_string(static_cast<int>(reduceImpl2)) +
+                std::to_string(use_padding2.first) + std::to_string(use_padding2.second);
 
             timer2.Start();
             handle->AddKernel(
