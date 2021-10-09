@@ -8,7 +8,45 @@
 
 #include <sstream>
 
+// headers from composable kernel, to get consistent ID mapping
+#include <data_type_enum.hpp>
+#include <reduction_enums.hpp>
+
 namespace detail_dyn_generic_reduction {
+
+static ck::DataTypeEnum_t mapDataTypeId(appDataType_t t)
+{
+    using ck::DataTypeEnum_t;
+
+    switch(t)
+    {
+    case appHalf: return DataTypeEnum_t::Half;
+    case appFloat: return DataTypeEnum_t::Float;
+    case appBFloat16: return DataTypeEnum_t::BFloat16;
+    case appDouble: return DataTypeEnum_t::Double;
+    case appInt8: return DataTypeEnum_t::Int8;
+    case appInt8x4: return DataTypeEnum_t::Int8x4;
+    case appInt32: return DataTypeEnum_t::Int32;
+    default: throw std::runtime_error("Only float, half, double data type is supported.");
+    };
+};
+
+static ck::ReduceTensorOp_t mapReduceOpId(ReduceTensorOp_t t)
+{
+    switch(t)
+    {
+    case REDUCE_TENSOR_ADD: return ck::ReduceTensorOp_t::ADD;
+    case REDUCE_TENSOR_MUL: return ck::ReduceTensorOp_t::MUL;
+    case REDUCE_TENSOR_MIN: return ck::ReduceTensorOp_t::MIN;
+    case REDUCE_TENSOR_MAX: return ck::ReduceTensorOp_t::MAX;
+    case REDUCE_TENSOR_AMAX: return ck::ReduceTensorOp_t::AMAX;
+    case REDUCE_TENSOR_AVG: return ck::ReduceTensorOp_t::AVG;
+    case REDUCE_TENSOR_NORM1: return ck::ReduceTensorOp_t::NORM1;
+    case REDUCE_TENSOR_NORM2: return ck::ReduceTensorOp_t::NORM2;
+
+    default: throw std::runtime_error("Operation is not supported");
+    };
+};
 
 template <typename TSrc, typename TComp, typename TDst>
 static std::string get_network_config_string_from_types()
@@ -38,9 +76,10 @@ static std::string get_definition_string_from_types()
 {
     std::ostringstream outs;
 
-    outs << " -DCK_PARAM_SRC_DATATYPE=" << Driver::get_type_enum_from_type<TSrc>();
-    outs << " -DCK_PARAM_DST_DATATYPE=" << Driver::get_type_enum_from_type<TDst>();
-    outs << " -DCK_PARAM_REDUCE_COMPTYPE=" << Driver::get_type_enum_from_type<TComp>();
+    outs << " -DCK_PARAM_SRC_DATATYPE=" << mapDataTypeId(Driver::get_type_enum_from_type<TSrc>());
+    outs << " -DCK_PARAM_DST_DATATYPE=" << mapDataTypeId(Driver::get_type_enum_from_type<TDst>());
+    outs << " -DCK_PARAM_REDUCE_COMPTYPE="
+         << mapDataTypeId(Driver::get_type_enum_from_type<TComp>());
 
     return (outs.str());
 };
@@ -231,6 +270,17 @@ static std::pair<bool, bool> get_padding_need(ReductionMethod_t reduceImpl,
     return (std::make_pair(src_need_padding, dst_need_padding));
 };
 
+static std::string get_network_config_string_from_options(NanPropagation_t nanPropaOpt,
+                                                          ReduceTensorIndices_t reduceIndicesOpt)
+{
+    std::ostringstream outs;
+
+    outs << "O_" << ((nanPropaOpt == PROPAGATE_NAN) ? 1 : 0)
+         << ((reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES) ? 1 : 0);
+
+    return (outs.str());
+};
+
 static std::string get_definition_string_from_options(NanPropagation_t nanPropaOpt,
                                                       ReduceTensorIndices_t reduceIndicesOpt)
 {
@@ -297,6 +347,56 @@ static std::string get_kernel_file_name(const bool isFirstCall,
     return (outs.str());
 };
 
+static int merge_packed_dimensions(int* dimLengths, int* dimStrides, int numDims)
+{
+    assert(numDims >= 1);
+
+    int resNumDims = numDims;
+    int pos        = numDims - 1;
+
+    while(pos > 0)
+    {
+        // packed dimensions
+        if(dimStrides[pos - 1] == dimLengths[pos] * dimStrides[pos])
+        {
+            dimLengths[pos] = dimLengths[pos] * dimLengths[pos - 1];
+
+            // shift the lower lengths/strides to left by 1
+            for(int i = pos; i < resNumDims; i++)
+            {
+                dimLengths[i - 1] = dimLengths[i];
+                dimStrides[i - 1] = dimStrides[i];
+            };
+            resNumDims--;
+            pos--;
+        }
+        else
+            pos--;
+    };
+
+    return (resNumDims);
+};
+
+template <typename dataType>
+static int get_dim_vector_io_size(int dimLength, int dimStride)
+{
+    appDataType_t dataTypeId = Driver::get_type_enum_from_type<dataType>();
+
+    if(dimStride != 1)
+        return (1);
+
+    if(dataTypeId != appDouble && dimLength % 8 == 0)
+        return (8);
+
+    if(dimLength % 4 == 0)
+        return (4);
+
+    if(dimLength % 2 == 0)
+        return (2);
+
+    return (1);
+};
+
 } // namespace detail_dyn_generic_reduction
 
 template <typename TSrc, typename TComp, typename TDst>
@@ -346,18 +446,20 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int p_outStrides[6] = {0};
 
     // re-order the input dimensions
-    int pos=0; 
+    int pos = 0;
 
-    for (int i = 0; i < invariantDims.size(); i++) {
-         p_inLengths[pos] = static_cast<int>(inLengths[invariantDims[i]]); 
-         p_inStrides[pos] = static_cast<int>(inStrides[invariantDims[i]]); 
-	 pos++;
+    for(int i = 0; i < invariantDims.size(); i++)
+    {
+        p_inLengths[pos] = static_cast<int>(inLengths[invariantDims[i]]);
+        p_inStrides[pos] = static_cast<int>(inStrides[invariantDims[i]]);
+        pos++;
     }
 
-    for (int i = 0; i < toReduceDims.size(); i++) {
-         p_inLengths[pos] = static_cast<int>(inLengths[toReduceDims[i]]);
-         p_inStrides[pos] = static_cast<int>(inStrides[toReduceDims[i]]); 
-	 pos++; 
+    for(int i = 0; i < toReduceDims.size(); i++)
+    {
+        p_inLengths[pos] = static_cast<int>(inLengths[toReduceDims[i]]);
+        p_inStrides[pos] = static_cast<int>(inStrides[toReduceDims[i]]);
+        pos++;
     }
 
     for(int i = 0; i < outLengths.size(); i++)
@@ -366,10 +468,31 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     for(int i = 0; i < outStrides.size(); i++)
         p_outStrides[i] = static_cast<int>(outStrides[i]);
 
-    if (invariantDims.empty()) {
+    if(invariantDims.empty())
+    {
         p_outLengths[0] = 1;
         p_outStrides[0] = 1;
     }
+
+    int mergedInvariantDims =
+        reduceAllDims ? 0 : merge_packed_dimensions(p_inLengths, p_inStrides, invariantDims.size());
+    int mergedOutDims =
+        reduceAllDims ? 1
+                      : merge_packed_dimensions(p_outLengths, p_outStrides, invariantDims.size());
+
+    int tmpPos = invariantDims.size();
+    int mergedToReduceDims =
+        merge_packed_dimensions(&p_inLengths[tmpPos], &p_inStrides[tmpPos], toReduceDims.size());
+
+    // pack p_inLengths[] and p_inStrides[]
+    if(invariantDims.size() > 0 && invariantDims.size() > mergedInvariantDims)
+    {
+        for(int i = 0; i < mergedToReduceDims; i++)
+        {
+            p_inLengths[mergedInvariantDims + i] = p_inLengths[tmpPos + i];
+            p_inStrides[mergedInvariantDims + i] = p_inStrides[tmpPos + i];
+        };
+    };
 
     auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
 
@@ -417,23 +540,26 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
              get_definition_string_from_tunable(tunable);
 
     if(!reduceAllDims)
-        param += " -DCK_PARAM_NUM_TOREDUCE_DIMS=" + std::to_string(toReduceDims.size());    
+        param += " -DCK_PARAM_NUM_TOREDUCE_DIMS=" + std::to_string(mergedToReduceDims);
 
-    param += " -DCK_PARAM_REDUCE_OP=" + std::to_string(reduceOp);
+    param += " -DCK_PARAM_REDUCE_OP=" + std::to_string(static_cast<int>(mapReduceOpId(reduceOp)));
 
     param += get_definition_string_from_options(nanPropaOpt, reduceIndicesOpt);
 
-    param += " -DCK_PARAM_IN_DIMS=" + std::to_string(inLengths.size());
-    param += " -DCK_PARAM_OUT_DIMS=" + std::to_string(outLengths.size());
+    param += " -DCK_PARAM_IN_DIMS=" + std::to_string(mergedInvariantDims + mergedToReduceDims);
+    param += " -DCK_PARAM_OUT_DIMS=";
+    param += reduceAllDims ? "1" : std::to_string(mergedOutDims);
 
     network_config = get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" +
                      get_network_config_string_from_tunable(tunable) + "_";
 
-    network_config += "I" + std::to_string(inLengths.size()) + "_";
+    network_config += std::to_string(static_cast<int>(mapReduceOpId(reduceOp))) + "_";
+    network_config += get_network_config_string_from_options(nanPropaOpt, reduceIndicesOpt);
+
+    network_config += "I" + std::to_string(mergedInvariantDims + mergedToReduceDims) + "_";
 
     network_config += "RED";
-    for(auto dim : toReduceDims)
-        network_config += std::to_string(dim) + "_";
+    network_config += std::to_string(mergedToReduceDims) + "_";
     network_config += "BSIZE_" + std::to_string(tunable->BlockSize);
 
     std::vector<float> kernel1_times;
@@ -460,6 +586,11 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                              " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding.first) +
                              " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding.second);
 
+        param1 += " -DCK_PARAM_IN_VECTOR_IO_SIZE=" +
+                  std::to_string(get_dim_vector_io_size<TSrc>(
+                      p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
+                      p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]));
+
         std::string program_name1    = get_kernel_file_name(true, reduceImpl, reduceAllDims);
         std::string kernel_name1     = "gridwise_generic_reduce_1_prepare";
         std::string network_config_1 = network_config + "_1_P" + std::to_string(reduceImpl) +
@@ -468,31 +599,37 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
         timer1.Start();
 
-        if(!reduceAllDims) 
+        if(!reduceAllDims)
             handle->AddKernel(
-                    algo_name, network_config_1, program_name1, kernel_name1, vld, vgd1, param1)(
-                    GridSize,
-                    BlkGroupSize,
-                    p_inLengths[0],
-                    p_inLengths[1],
-                    p_inLengths[2],
-                    p_inLengths[3],
-                    p_inLengths[4],
-                    p_inLengths[5],
-                    p_inStrides[0],
-                    p_inStrides[1],
-                    p_inStrides[2],
-                    p_inStrides[3],
-                    p_inStrides[4],
-                    p_inStrides[5],
-                    p_outStrides[0],
-                    p_outStrides[1],
-                    p_outStrides[2],
-                    p_outStrides[3],
-                    p_outStrides[4],
-                    p_outStrides[5],
-                    workspace.GetDeviceBuffer());
-	else 
+                algo_name, network_config_1, program_name1, kernel_name1, vld, vgd1, param1)(
+                GridSize,
+                BlkGroupSize,
+                p_inLengths[0],
+                p_inLengths[1],
+                p_inLengths[2],
+                p_inLengths[3],
+                p_inLengths[4],
+                p_inLengths[5],
+                p_inStrides[0],
+                p_inStrides[1],
+                p_inStrides[2],
+                p_inStrides[3],
+                p_inStrides[4],
+                p_inStrides[5],
+                p_outLengths[0],
+                p_outLengths[1],
+                p_outLengths[2],
+                p_outLengths[3],
+                p_outLengths[4],
+                p_outLengths[5],
+                p_outStrides[0],
+                p_outStrides[1],
+                p_outStrides[2],
+                p_outStrides[3],
+                p_outStrides[4],
+                p_outStrides[5],
+                workspace.GetDeviceBuffer());
+        else
             handle->AddKernel(
                 algo_name, network_config_1, program_name1, kernel_name1, vld, vgd1, param1)(
                 GridSize,
@@ -557,7 +694,10 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                                  " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding2.first) +
                                  " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding2.second);
 
-            std::string program_name2 = get_kernel_file_name(false, reduceImpl2, reduceAllDims); 
+            param2 += " -DCK_PARAM_IN_VECTOR_IO_SIZE=" +
+                      std::to_string(get_dim_vector_io_size<TSrc>(toReduceLength_2, 1));
+
+            std::string program_name2    = get_kernel_file_name(false, reduceImpl2, reduceAllDims);
             std::string kernel_name2     = "gridwise_generic_reduce_2_prepare";
             std::string network_config_2 = network_config + "_2_P" + std::to_string(reduceImpl2) +
                                            std::to_string(use_padding2.first) +
@@ -587,7 +727,6 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                 handle->AddKernel(
                     algo_name, network_config_2, program_name2, kernel_name2, vld, vgd1, param2)(
                     GridSize_2, BlkGroupSize, workspace.GetDeviceBuffer());
-
 
             timer1.End();
 
