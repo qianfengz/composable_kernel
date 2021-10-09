@@ -1,0 +1,4 @@
+[submodule "ck"]
+	path = ck
+	url = https://github.com/ROCmSoftwarePlatform/composable_kernel
+	branch = develop
