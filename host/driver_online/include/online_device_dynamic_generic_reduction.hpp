@@ -328,21 +328,55 @@ static inline std::string get_arch_specific_compiler_flag(const online_compile::
     return compiler_flag;
 };
 
+static bool useGlobalAtomicAddReduce(const ReduceTensorOp_t reduceOp,
+                                     appDataType_t globalOutDataType,
+                                     float beta)
+{
+    if(beta != 0.0f)
+        return (false);
+
+    // AtomicAdd for Half is not supported by the Hardware, while for Double
+    // change in amd_buffer_addressing.hpp is needed to support AtomicAdd
+    if(globalOutDataType != appFloat)
+        return (false);
+
+    if(reduceOp != REDUCE_TENSOR_ADD && reduceOp != REDUCE_TENSOR_AVG &&
+       reduceOp != REDUCE_TENSOR_NORM1)
+        return (false);
+
+    return (true);
+};
+
 static std::string get_kernel_file_name(const bool isFirstCall,
                                         const ReductionMethod_t reduceImpl,
-                                        const bool allDimsReduced)
+                                        const bool allDimsReduced,
+                                        const bool useGlobalAtomicAdd = false)
 {
     std::ostringstream outs;
 
-    if(isFirstCall)
+    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+    {
         outs << "gridwise_generic_reduction_first_call_" << getReductionMethodStr(reduceImpl);
-    else
-        outs << "gridwise_generic_reduction_second_call_" << getReductionMethodStr(reduceImpl);
 
-    if(allDimsReduced)
-        outs << "_reduce_all_dims.cpp";
+        if(allDimsReduced)
+            outs << "_reduce_all_dims";
+        else
+            outs << "_reduce_partial_dims";
+
+        outs << "_atomic_add.cpp";
+    }
     else
-        outs << "_reduce_partial_dims.cpp";
+    {
+        if(isFirstCall)
+            outs << "gridwise_generic_reduction_first_call_" << getReductionMethodStr(reduceImpl);
+        else
+            outs << "gridwise_generic_reduction_second_call_" << getReductionMethodStr(reduceImpl);
+
+        if(allDimsReduced)
+            outs << "_reduce_all_dims.cpp";
+        else
+            outs << "_reduce_partial_dims.cpp";
+    }
 
     return (outs.str());
 };
@@ -525,8 +559,13 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int BlkGroupSize =
         (reduceImpl == ReductionMethod_t::MultiBlock) ? GridSize / invariantLength : 0;
 
-    const std::vector<size_t> vld  = {static_cast<size_t>(tunable->BlockSize), 1, 1};
-    const std::vector<size_t> vgd1 = {static_cast<size_t>(tunable->BlockSize), 1, 1};
+    const bool useGlobalAtomicAdd =
+        useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);
+
+    const std::vector<size_t> vld    = {static_cast<size_t>(tunable->BlockSize), 1, 1};
+    const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable->BlockSize), 1, 1};
+    const std::vector<size_t> vgd1_s = {
+        (invariantLength + tunable->BlockSize - 1) / tunable->BlockSize * tunable->BlockSize, 1, 1};
     const std::vector<size_t> vgd2 = {static_cast<size_t>(GridSize) * tunable->BlockSize, 1, 1};
 
     std::string algo_name = "dynamic_generic_reduction";
@@ -591,7 +630,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                       p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
                       p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]));
 
-        std::string program_name1    = get_kernel_file_name(true, reduceImpl, reduceAllDims);
+        std::string program_name1 =
+            get_kernel_file_name(true, reduceImpl, reduceAllDims, useGlobalAtomicAdd);
         std::string kernel_name1     = "gridwise_generic_reduce_1_prepare";
         std::string network_config_1 = network_config + "_1_P" + std::to_string(reduceImpl) +
                                        std::to_string(use_padding.first) +
@@ -650,6 +690,28 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
         timer1.End();
 
+        if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+        {
+            auto tmpTimeVal = timer1.GetElapsedTime();
+
+            kernel_name1     = "gridwise_generic_set_out_buffer";
+            network_config_1 = "set_out_buffer";
+
+            float zeroVal = 0.0f;
+
+            timer1.Start();
+            handle->AddKernel(
+                algo_name, network_config_1, program_name1, kernel_name1, vld, vgd1_s, param1)(
+                zeroVal, out_dev_buf.GetDeviceBuffer(), workspace.GetDeviceBuffer());
+            timer1.End();
+
+            tmpTimeVal += timer1.GetElapsedTime();
+
+            kernel1_times.push_back(tmpTimeVal);
+        }
+        else
+            kernel1_times.push_back(timer1.GetElapsedTime());
+
         kernel_name1     = "gridwise_generic_reduce_1";
         network_config_1 = network_config + "_1" + std::to_string(reduceImpl) +
                            std::to_string(use_padding.first) + std::to_string(use_padding.second);
@@ -668,12 +730,11 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             indices_dev_buf.GetDeviceBuffer());
         timer2.End();
 
-        kernel1_times.push_back(timer1.GetElapsedTime());
         kernel2_times.push_back(timer2.GetElapsedTime());
 
         total_transfer_bytes = (size_t)invariantLength * toReduceLength * sizeof(TSrc);
 
-        if(reduceImpl == ReductionMethod_t::MultiBlock)
+        if(reduceImpl == ReductionMethod_t::MultiBlock && !useGlobalAtomicAdd)
         {
             auto toReduceLength_2 = BlkGroupSize;
             int GridSize_2 =
@@ -730,6 +791,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
             timer1.End();
 
+            kernel3_times.push_back(timer1.GetElapsedTime());
+
             kernel_name2     = "gridwise_generic_reduce_2";
             network_config_2 = network_config + "_2" + std::to_string(reduceImpl2) +
                                std::to_string(use_padding2.first) +
@@ -748,7 +811,6 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                 indices_dev_buf.GetDeviceBuffer());
             timer2.End();
 
-            kernel3_times.push_back(timer1.GetElapsedTime());
             kernel4_times.push_back(timer2.GetElapsedTime());
 
             total_transfer_bytes += (size_t)invariantLength * toReduceLength_2 *
@@ -766,7 +828,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
         total_transfer_time += ave_time2;
 
-        if(reduceImpl == ReductionMethod_t::MultiBlock)
+        if(reduceImpl == ReductionMethod_t::MultiBlock && !useGlobalAtomicAdd)
         {
             auto ave_time3 = Driver::get_effective_average(kernel3_times);
             auto ave_time4 = Driver::get_effective_average(kernel4_times);
