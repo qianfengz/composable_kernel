@@ -7,12 +7,28 @@
 #include "handle.hpp"
 
 #include <sstream>
+#include <cstdlib>
 
 // headers from composable kernel, to get consistent ID mapping
 #include <data_type_enum.hpp>
 #include <reduction_enums.hpp>
 
 namespace detail_dyn_generic_reduction {
+
+static int getEnvVarValue(const char* envVarName)
+{
+    const char* valString = getenv(envVarName);
+
+    if(valString == nullptr)
+        return (-1);
+
+    int val = atoi(valString);
+
+    if(val < 0)
+        return (-1);
+
+    return (val);
+};
 
 static ck::DataTypeEnum_t mapDataTypeId(appDataType_t t)
 {
@@ -96,17 +112,27 @@ static std::string get_definition_string_from_tunable(const tunable_dyn_generic_
     return (outs.str());
 };
 
+static int getBlocksForEnoughUtilization(const online_compile::Handle* handle, int BlockSize)
+{
+    int numCUs           = handle->GetMaxComputeUnits();
+    int numWarpsPerBlock = BlockSize / handle->GetWavefrontWidth();
+
+    // assumes: 1) 4 SIMDs per CU and assume
+    //          2) need 30 active waves for a complete utilization of one SIMD
+    return (numCUs * 4 * 30 / numWarpsPerBlock);
+};
+
 struct ReductionKernelConfigurator
 {
     ReductionKernelConfigurator() = default;
 
-    ReductionKernelConfigurator(int blockSize, int warpSize)
-        : blockSize_(blockSize), warpSize_(warpSize)
+    ReductionKernelConfigurator(online_compile::Handle* handle, int blockSize, int warpSize)
+        : handle_(handle), blockSize_(blockSize), warpSize_(warpSize)
     {
         GredDirectThreadWiseUpperReductionLen = warpSize;
         GredDirectWarpWiseUpperReductionLen   = blockSize;
         GredBlockWiseUpperReductionLen        = blockSize * 4;
-        GredUpperNumBlocksPerReduction        = 32;
+        GredUpperNumBlocksPerReduction        = 128;
 
         numWarpsPerBlock = blockSize / warpSize;
     };
@@ -114,6 +140,7 @@ struct ReductionKernelConfigurator
     int blockSize_;
     int warpSize_;
     int numWarpsPerBlock;
+    online_compile::Handle* handle_;
 
     std::size_t GredDirectThreadWiseUpperReductionLen;
     std::size_t GredDirectWarpWiseUpperReductionLen;
@@ -145,13 +172,37 @@ struct ReductionKernelConfigurator
                     GredBlockWiseUpperReductionLen) // let one block to do each reduction
                 return (invariantLength);
             else
-            { // let multiple blocks to do each reduction
+            {
+                // let multiple blocks to do each reduction
                 std::size_t expBlocksPerReduction =
                     (toReduceLength + GredBlockWiseUpperReductionLen - 1) /
                     GredBlockWiseUpperReductionLen;
 
                 if(expBlocksPerReduction > GredUpperNumBlocksPerReduction)
-                    return (invariantLength * GredUpperNumBlocksPerReduction);
+                {
+                    if(invariantLength >= handle_->GetMaxComputeUnits())
+                    {
+                        if(expBlocksPerReduction < 2 * GredUpperNumBlocksPerReduction)
+                            return (invariantLength * expBlocksPerReduction);
+                        else
+                            return (invariantLength * GredUpperNumBlocksPerReduction);
+                    }
+                    else
+                    {
+                        int numBlocksPerReduce = GredUpperNumBlocksPerReduction;
+
+                        while(numBlocksPerReduce <= expBlocksPerReduction)
+                        {
+                            // increase the number of blocks per reduction so that we have enough
+                            // blocks to utlize the CUs
+                            if(invariantLength * numBlocksPerReduce >=
+                               handle_->GetMaxComputeUnits() * 4)
+                                return (invariantLength * numBlocksPerReduce);
+                            numBlocksPerReduce++;
+                        };
+                        return (invariantLength * expBlocksPerReduction);
+                    }
+                }
                 else
                     return (invariantLength * expBlocksPerReduction);
             };
@@ -183,7 +234,9 @@ struct ReductionKernelConfigurator
                     GredBlockWiseUpperReductionLen) // let one block to do each reduction
                 return (ReductionMethod_t::BlockWise);
             else
+            {
                 return (ReductionMethod_t::MultiBlock); // let multiple blocks to do each reduction
+            }
         };
     };
 
@@ -332,6 +385,9 @@ static bool useGlobalAtomicAddReduce(const ReduceTensorOp_t reduceOp,
                                      appDataType_t globalOutDataType,
                                      float beta)
 {
+    if(getEnvVarValue("DEBUG_REDUCE_USE_ATOMIC_ADD") == 0)
+        return (false);
+
     if(beta != 0.0f)
         return (false);
 
@@ -412,7 +468,7 @@ static int merge_packed_dimensions(int* dimLengths, int* dimStrides, int numDims
 };
 
 template <typename dataType>
-static int get_dim_vector_io_size(int dimLength, int dimStride)
+static int get_dim_vector_size(int dimLength, int dimStride)
 {
     appDataType_t dataTypeId = Driver::get_type_enum_from_type<dataType>();
 
@@ -456,7 +512,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     size_t toReduceLength  = in.mDesc.GetElementSize() / invariantLength;
     int origReduceLen      = toReduceLength;
 
-    ReductionKernelConfigurator configurator(tunable->BlockSize, handle->GetWavefrontWidth());
+    ReductionKernelConfigurator configurator(
+        handle, tunable->BlockSize, handle->GetWavefrontWidth());
 
     const bool reduceAllDims = invariantDims.empty();
 
@@ -559,6 +616,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int BlkGroupSize =
         (reduceImpl == ReductionMethod_t::MultiBlock) ? GridSize / invariantLength : 0;
 
+    std::cout << "GridSize = " << GridSize << ", BlkGroupSize = " << BlkGroupSize << std::endl;
+
     const bool useGlobalAtomicAdd =
         useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);
 
@@ -625,8 +684,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                              " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding.first) +
                              " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding.second);
 
-        param1 += " -DCK_PARAM_IN_VECTOR_IO_SIZE=" +
-                  std::to_string(get_dim_vector_io_size<TSrc>(
+        param1 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
+                  std::to_string(get_dim_vector_size<TSrc>(
                       p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
                       p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]));
 
@@ -755,8 +814,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                                  " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding2.first) +
                                  " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding2.second);
 
-            param2 += " -DCK_PARAM_IN_VECTOR_IO_SIZE=" +
-                      std::to_string(get_dim_vector_io_size<TSrc>(toReduceLength_2, 1));
+            param2 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
+                      std::to_string(get_dim_vector_size<TSrc>(toReduceLength_2, 1));
 
             std::string program_name2    = get_kernel_file_name(false, reduceImpl2, reduceAllDims);
             std::string kernel_name2     = "gridwise_generic_reduce_2_prepare";

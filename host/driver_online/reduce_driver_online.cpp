@@ -112,7 +112,7 @@ static void show_usage(const char* cmd)
     std::cout << "--verify or -v, 1/0 to indicate whether to verify the reduction result by "
                  "comparing with the host-based reduction"
               << std::endl;
-    std::cout << "--dumpout or -v, 1/0 to indicate wheter to save the reduction result to files "
+    std::cout << "--dumpout or -o, 1/0 to indicate wheter to save the reduction result to files "
                  "for further analysis"
               << std::endl;
     std::cout << "--log or -l, 1/0 to indicate whether to log some information" << std::endl;
