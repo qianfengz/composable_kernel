@@ -126,8 +126,8 @@ struct ReductionKernelConfigurator
 {
     ReductionKernelConfigurator() = default;
 
-    ReductionKernelConfigurator(online_compile::Handle* handle, int blockSize, int warpSize)
-        : handle_(handle), blockSize_(blockSize), warpSize_(warpSize)
+    ReductionKernelConfigurator(int blockSize, int warpSize, int numMaxCUs)
+        : blockSize_(blockSize), warpSize_(warpSize), numMaxCUs_(numMaxCUs)
     {
         GredDirectThreadWiseUpperReductionLen = warpSize;
         GredDirectWarpWiseUpperReductionLen   = blockSize;
@@ -140,7 +140,7 @@ struct ReductionKernelConfigurator
     int blockSize_;
     int warpSize_;
     int numWarpsPerBlock;
-    online_compile::Handle* handle_;
+    int numMaxCUs_;
 
     std::size_t GredDirectThreadWiseUpperReductionLen;
     std::size_t GredDirectWarpWiseUpperReductionLen;
@@ -180,7 +180,7 @@ struct ReductionKernelConfigurator
 
                 if(expBlocksPerReduction > GredUpperNumBlocksPerReduction)
                 {
-                    if(invariantLength >= handle_->GetMaxComputeUnits())
+                    if(invariantLength >= numMaxCUs_)
                     {
                         if(expBlocksPerReduction < 2 * GredUpperNumBlocksPerReduction)
                             return (invariantLength * expBlocksPerReduction);
@@ -195,8 +195,7 @@ struct ReductionKernelConfigurator
                         {
                             // increase the number of blocks per reduction so that we have enough
                             // blocks to utlize the CUs
-                            if(invariantLength * numBlocksPerReduce >=
-                               handle_->GetMaxComputeUnits() * 4)
+                            if(invariantLength * numBlocksPerReduce >= numMaxCUs_ * 4)
                                 return (invariantLength * numBlocksPerReduce);
                             numBlocksPerReduce++;
                         };
@@ -513,7 +512,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int origReduceLen      = toReduceLength;
 
     ReductionKernelConfigurator configurator(
-        handle, tunable->BlockSize, handle->GetWavefrontWidth());
+        tunable->BlockSize, handle->GetWavefrontWidth(), handle->GetMaxComputeUnits());
 
     const bool reduceAllDims = invariantDims.empty();
 
