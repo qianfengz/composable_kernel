@@ -402,6 +402,27 @@ static bool useGlobalAtomicAddReduce(const ReduceTensorOp_t reduceOp,
     return (true);
 };
 
+static bool useVectorLoadOnInvariantDim(const ReductionMethod_t reduceImpl,
+                                        int InvariantDimVectorSize,
+                                        bool use_indices)
+{
+    if(getEnvVarValue("DEBUG_USE_INVARIANT_DIM_VECTOR_LOAD") == 0)
+        return (false);
+
+    if(use_indices)
+        return (false);
+
+    // At first, vector_load on invariant dim can only be used with MultiBlock kernel, gradually
+    // it will be extended for using with other reduction kernel
+    if(reduceImpl != ReductionMethod_t::MultiBlock)
+        return (false);
+
+    if(InvariantDimVectorSize <= 1)
+        return (false);
+
+    return (true);
+};
+
 static std::string get_kernel_file_name(const bool isFirstCall,
                                         const ReductionMethod_t reduceImpl,
                                         const bool allDimsReduced,
@@ -584,6 +605,12 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         };
     };
 
+    int ReduceDimVectorSize =
+        get_dim_vector_size<TSrc>(p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
+                                  p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]);
+    int InvariantDimVectorSize = get_dim_vector_size<TSrc>(p_inLengths[mergedInvariantDims - 1],
+                                                           p_inStrides[mergedInvariantDims - 1]);
+
     auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
 
     bool need_indices = (reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES) &&
@@ -615,16 +642,20 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int BlkGroupSize =
         (reduceImpl == ReductionMethod_t::MultiBlock) ? GridSize / invariantLength : 0;
 
-    std::cout << "GridSize = " << GridSize << ", BlkGroupSize = " << BlkGroupSize << std::endl;
-
     const bool useGlobalAtomicAdd =
         useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);
+
+    const bool InvariantDimVectorLoad =
+        useVectorLoadOnInvariantDim(reduceImpl, InvariantDimVectorSize, need_indices);
 
     const std::vector<size_t> vld    = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable->BlockSize), 1, 1};
     const std::vector<size_t> vgd1_s = {
         (invariantLength + tunable->BlockSize - 1) / tunable->BlockSize * tunable->BlockSize, 1, 1};
-    const std::vector<size_t> vgd2 = {static_cast<size_t>(GridSize) * tunable->BlockSize, 1, 1};
+
+    const size_t realGridSize =
+        InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
+    const std::vector<size_t> vgd2 = {realGridSize * tunable->BlockSize, 1, 1};
 
     std::string algo_name = "dynamic_generic_reduction";
 
@@ -683,10 +714,9 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                              " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding.first) +
                              " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding.second);
 
-        param1 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
-                  std::to_string(get_dim_vector_size<TSrc>(
-                      p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
-                      p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]));
+        param1 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" + std::to_string(ReduceDimVectorSize);
+        param1 += " -DCK_PARAM_INVARIANT_DIM_VECTOR_SIZE=" +
+                  std::to_string(InvariantDimVectorLoad ? InvariantDimVectorSize : 1);
 
         std::string program_name1 =
             get_kernel_file_name(true, reduceImpl, reduceAllDims, useGlobalAtomicAdd);
@@ -792,6 +822,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
         total_transfer_bytes = (size_t)invariantLength * toReduceLength * sizeof(TSrc);
 
+        // Need secondary reduction only when AtomicAdd was not used by the first-time reduction
         if(reduceImpl == ReductionMethod_t::MultiBlock && !useGlobalAtomicAdd)
         {
             auto toReduceLength_2 = BlkGroupSize;
