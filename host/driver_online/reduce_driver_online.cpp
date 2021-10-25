@@ -16,7 +16,11 @@
 #include "conv_common.hpp"
 #include "host_conv.hpp"
 #include "device_tensor.hpp"
+#ifdef TEST_GENERRIC_CONFIG
+#include "online_device_dynamic_generic_reduction_2.hpp"
+#else
 #include "online_device_dynamic_generic_reduction.hpp"
+#endif
 #include "online_driver_common.hpp"
 #include "online_reduce_common.hpp"
 #include "host_generic_reduction.hpp"
@@ -413,8 +417,6 @@ static void do_reduce_testing(online_compile::Handle* handle)
                 out_dev.mData[i] = out_host.mData[i];
     }
 
-    tunable_dyn_generic_reduction* tunable = &default_tunable_dyn_generic_reduction;
-
     device_dynamic_generic_reduction_olc<dataType, compType, dataType>(handle,
                                                                        invariantDims,
                                                                        toReduceDims,
@@ -426,7 +428,6 @@ static void do_reduce_testing(online_compile::Handle* handle)
                                                                        indicesOpt,
                                                                        alpha,
                                                                        beta,
-                                                                       tunable,
                                                                        nrepeat);
 
     if(do_verification)

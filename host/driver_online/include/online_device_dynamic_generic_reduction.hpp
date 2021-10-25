@@ -423,7 +423,7 @@ static bool useVectorLoadOnInvariantDim(const ReductionMethod_t reduceImpl,
     return (true);
 };
 
-static std::string get_kernel_file_name(const bool isFirstCall,
+static std::string get_kernel_file_name(const bool isSecondCall,
                                         const ReductionMethod_t reduceImpl,
                                         const bool allDimsReduced,
                                         const bool useGlobalAtomicAdd = false)
@@ -432,7 +432,7 @@ static std::string get_kernel_file_name(const bool isFirstCall,
 
     if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
     {
-        outs << "gridwise_generic_reduction_first_call_" << getReductionMethodStr(reduceImpl);
+        outs << "gridwise_generic_reduction_" << getReductionMethodStr(reduceImpl);
 
         if(allDimsReduced)
             outs << "_reduce_all_dims";
@@ -443,8 +443,8 @@ static std::string get_kernel_file_name(const bool isFirstCall,
     }
     else
     {
-        if(isFirstCall)
-            outs << "gridwise_generic_reduction_first_call_" << getReductionMethodStr(reduceImpl);
+        if(!isSecondCall)
+            outs << "gridwise_generic_reduction_" << getReductionMethodStr(reduceImpl);
         else
             outs << "gridwise_generic_reduction_second_call_" << getReductionMethodStr(reduceImpl);
 
@@ -521,12 +521,13 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                                           ReduceTensorIndices_t reduceIndicesOpt,
                                           float alpha,
                                           float beta,
-                                          const tunable_dyn_generic_reduction* tunable,
                                           int nrepeat)
 {
     using namespace ck;
     using namespace detail_dyn_generic_reduction;
     using size_t = std::size_t;
+
+    tunable_dyn_generic_reduction* tunable = &default_tunable_dyn_generic_reduction;
 
     size_t invariantLength = out.mDesc.GetElementSize();
     size_t toReduceLength  = in.mDesc.GetElementSize() / invariantLength;
@@ -719,7 +720,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                   std::to_string(InvariantDimVectorLoad ? InvariantDimVectorSize : 1);
 
         std::string program_name1 =
-            get_kernel_file_name(true, reduceImpl, reduceAllDims, useGlobalAtomicAdd);
+            get_kernel_file_name(false, reduceImpl, reduceAllDims, useGlobalAtomicAdd);
         std::string kernel_name1     = "gridwise_generic_reduce_1_prepare";
         std::string network_config_1 = network_config + "_1_P" + std::to_string(reduceImpl) +
                                        std::to_string(use_padding.first) +
@@ -847,7 +848,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             param2 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
                       std::to_string(get_dim_vector_size<TSrc>(toReduceLength_2, 1));
 
-            std::string program_name2    = get_kernel_file_name(false, reduceImpl2, reduceAllDims);
+            std::string program_name2    = get_kernel_file_name(true, reduceImpl2, reduceAllDims);
             std::string kernel_name2     = "gridwise_generic_reduce_2_prepare";
             std::string network_config_2 = network_config + "_2_P" + std::to_string(reduceImpl2) +
                                            std::to_string(use_padding2.first) +
