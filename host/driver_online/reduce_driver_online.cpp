@@ -16,11 +16,7 @@
 #include "conv_common.hpp"
 #include "host_conv.hpp"
 #include "device_tensor.hpp"
-#ifdef TEST_GENERRIC_CONFIG
-#include "online_device_dynamic_generic_reduction_2.hpp"
-#else
 #include "online_device_dynamic_generic_reduction.hpp"
-#endif
 #include "online_driver_common.hpp"
 #include "online_reduce_common.hpp"
 #include "host_generic_reduction.hpp"

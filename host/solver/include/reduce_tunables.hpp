@@ -1,14 +1,22 @@
 #ifndef GENERIC_REDUCTION_TUNABLES_HPP
 #define GENERIC_REDUCTION_TUNABLES_HPP
 
-struct tunable_dyn_generic_reduction
+struct tunable_generic_2d_reduction
 {
     ck::index_t BlockSize;
-    ck::index_t GredThreadBufferLength;
-    ck::index_t GredAccessesPerThreadInBlock;
-    ck::index_t GredAccessesPerThreadInWarp;
-};
 
-static struct tunable_dyn_generic_reduction default_tunable_dyn_generic_reduction = {256, 8, 2, 2};
+    // dim0 is invariant dimension
+    ck::index_t dim0_thread_slice_length;
+    ck::index_t dim0_thread_cluster_length;
+
+    // dim 1 is to-reduce dimension
+    ck::index_t dim1_thread_slice_length;
+    ck::index_t dim1_thread_cluster_length;
+
+    // false -- indicates lower Thread Id bits are assigned to dim0, upper Thread Id bits are
+    // assigned to dim1 true -- indicates upper Thread Ids bits are assigned to dim0, lower Thread
+    // Id bits are assigned to dim1
+    bool reordered_thread_clusters;
+};
 
 #endif

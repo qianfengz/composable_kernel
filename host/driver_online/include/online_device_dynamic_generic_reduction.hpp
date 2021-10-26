@@ -13,6 +13,8 @@
 #include <data_type_enum.hpp>
 #include <reduction_enums.hpp>
 
+static constexpr int default_workgroup_size = 256;
+
 namespace detail_dyn_generic_reduction {
 
 static int getEnvVarValue(const char* envVarName)
@@ -75,18 +77,6 @@ static std::string get_network_config_string_from_types()
     return (outs.str());
 };
 
-static std::string get_network_config_string_from_tunable(const tunable_dyn_generic_reduction* pt)
-{
-    std::ostringstream outs;
-
-    outs << "TUN_" << pt->BlockSize << "_";
-    outs << pt->GredThreadBufferLength << "_";
-    outs << pt->GredAccessesPerThreadInBlock << "_";
-    outs << pt->GredAccessesPerThreadInWarp;
-
-    return (outs.str());
-};
-
 template <typename TSrc, typename TComp, typename TDst>
 static std::string get_definition_string_from_types()
 {
@@ -100,14 +90,92 @@ static std::string get_definition_string_from_types()
     return (outs.str());
 };
 
-static std::string get_definition_string_from_tunable(const tunable_dyn_generic_reduction* pt)
+static tunable_generic_2d_reduction getDefaultTunable(ReductionMethod_t reduceImpl)
+{
+    tunable_generic_2d_reduction tunable;
+
+    tunable.BlockSize                  = default_workgroup_size;
+    tunable.dim0_thread_cluster_length = 1;
+    tunable.dim0_thread_slice_length   = 1;
+    tunable.dim1_thread_cluster_length = default_workgroup_size;
+
+    if(reduceImpl == ReductionMethod_t::DirectThreadWise)
+        tunable.dim1_thread_slice_length = 8;
+    else
+        tunable.dim1_thread_slice_length = 2;
+    tunable.reordered_thread_clusters = false;
+
+    return (tunable);
+};
+
+static std::string get_basic_network_config_string(ReductionMethod_t reduceImpl,
+                                                   bool useGlobalAtomicAdd = false)
+{
+    std::ostringstream outs;
+
+    outs << "NC_" << reduceImpl << "_" << useGlobalAtomicAdd;
+
+    return (outs.str());
+};
+
+static std::string get_network_config_string_from_tunable(ReductionMethod_t reduceImpl,
+                                                          const tunable_generic_2d_reduction* pt,
+                                                          bool useGlobalAtomicAdd = false)
+{
+    std::ostringstream outs;
+
+    outs << "TUN_" << pt->BlockSize << "_";
+
+    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+    {
+#ifdef TEST_GENERIC_CONFIG
+        outs << pt->dim0_thread_cluster_length << "_" << pt->dim0_thread_slice_length << "_";
+        outs << pt->dim1_thread_cluster_length << "_" << pt->dim1_thread_slice_length << "_";
+        outs << pt->reordered_thread_clusters;
+#else
+        outs << pt->dim1_thread_slice_length << "_";
+#endif
+    }
+    else
+        outs << pt->dim1_thread_slice_length << "_";
+
+    return (outs.str());
+};
+
+static std::string get_definition_string_from_tunable(ReductionMethod_t reduceImpl,
+                                                      const tunable_generic_2d_reduction* pt,
+                                                      bool useGlobalAtomicAdd = false)
 {
     std::ostringstream outs;
 
     outs << " -DCK_PARAM_BLOCKSIZE=" << pt->BlockSize;
-    outs << " -DCK_PARAM_THREAD_BUFFER_LENGTH=" << pt->GredThreadBufferLength;
-    outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->GredAccessesPerThreadInBlock;
-    outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INWARP=" << pt->GredAccessesPerThreadInWarp;
+
+    if(reduceImpl == ReductionMethod_t::DirectThreadWise)
+        outs << " -DCK_PARAM_THREAD_BUFFER_LENGTH=" << pt->dim1_thread_slice_length;
+
+    if(reduceImpl == ReductionMethod_t::DirectWarpWise)
+        outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INWARP=" << pt->dim1_thread_slice_length;
+
+    if(reduceImpl == ReductionMethod_t::BlockWise)
+        outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
+
+    if(reduceImpl == ReductionMethod_t::MultiBlock)
+    {
+        if(useGlobalAtomicAdd)
+        {
+#ifdef TEST_GENERIC_CONFIG
+            outs << " -DCK_PARAM_DIM0_THREAD_CLUSTER_LENGTH=" << pt->dim0_thread_cluster_length;
+            outs << " -DCK_PARAM_DIM0_THREAD_SLICE_LENGTH=" << pt->dim0_thread_slice_length;
+            outs << " -DCK_PARAM_DIM1_THREAD_CLUSTER_LENGTH=" << pt->dim1_thread_cluster_length;
+            outs << " -DCK_PARAM_DIM1_THREAD_SLICE_LENGTH=" << pt->dim1_thread_slice_length;
+            outs << " -DCK_PARAM_REORDERED_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
+#else
+            outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
+#endif
+        }
+        else
+            outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
+    }
 
     return (outs.str());
 };
@@ -282,7 +350,7 @@ static std::pair<bool, bool> get_padding_need(ReductionMethod_t reduceImpl,
                                               int BlockSize,
                                               int warpSize,
                                               int BlkGroupSize,
-                                              const tunable_dyn_generic_reduction* tunable)
+                                              const tunable_generic_2d_reduction* tunable)
 {
     bool src_need_padding = false;
     bool dst_need_padding = false;
@@ -292,13 +360,13 @@ static std::pair<bool, bool> get_padding_need(ReductionMethod_t reduceImpl,
     switch(reduceImpl)
     {
     case ReductionMethod_t::DirectThreadWise:
-        copySliceLen = tunable->GredThreadBufferLength;
+        copySliceLen = tunable->dim1_thread_slice_length;
         src_need_padding =
             (invariantLen < GridSize * BlockSize || toReduceLen % copySliceLen > 0) ? true : false;
         dst_need_padding = (invariantLen < GridSize * BlockSize) ? true : false;
         break;
     case ReductionMethod_t::DirectWarpWise:
-        copySliceLen = warpSize * tunable->GredAccessesPerThreadInWarp;
+        copySliceLen = warpSize * tunable->dim1_thread_slice_length;
         src_need_padding =
             (invariantLen < GridSize * BlockSize / warpSize || toReduceLen % copySliceLen > 0)
                 ? true
@@ -306,11 +374,11 @@ static std::pair<bool, bool> get_padding_need(ReductionMethod_t reduceImpl,
         dst_need_padding = (invariantLen < GridSize * BlockSize / warpSize) ? true : false;
         break;
     case ReductionMethod_t::BlockWise:
-        copySliceLen     = BlockSize * tunable->GredAccessesPerThreadInBlock;
+        copySliceLen     = BlockSize * tunable->dim1_thread_slice_length;
         src_need_padding = (toReduceLen % copySliceLen > 0) ? true : false;
         break;
     case ReductionMethod_t::MultiBlock:
-        copySliceLen = BlockSize * tunable->GredAccessesPerThreadInBlock;
+        copySliceLen = BlockSize * tunable->dim1_thread_slice_length;
         reduceSizePerBlock =
             (((toReduceLen + BlkGroupSize - 1) / BlkGroupSize + copySliceLen - 1) / copySliceLen) *
             copySliceLen;
@@ -527,14 +595,12 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     using namespace detail_dyn_generic_reduction;
     using size_t = std::size_t;
 
-    tunable_dyn_generic_reduction* tunable = &default_tunable_dyn_generic_reduction;
-
     size_t invariantLength = out.mDesc.GetElementSize();
     size_t toReduceLength  = in.mDesc.GetElementSize() / invariantLength;
     int origReduceLen      = toReduceLength;
 
     ReductionKernelConfigurator configurator(
-        tunable->BlockSize, handle->GetWavefrontWidth(), handle->GetMaxComputeUnits());
+        default_workgroup_size, handle->GetWavefrontWidth(), handle->GetMaxComputeUnits());
 
     const bool reduceAllDims = invariantDims.empty();
 
@@ -649,14 +715,16 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     const bool InvariantDimVectorLoad =
         useVectorLoadOnInvariantDim(reduceImpl, InvariantDimVectorSize, need_indices);
 
-    const std::vector<size_t> vld    = {static_cast<size_t>(tunable->BlockSize), 1, 1};
-    const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable->BlockSize), 1, 1};
+    auto tunable = getDefaultTunable(reduceImpl);
+
+    const std::vector<size_t> vld    = {static_cast<size_t>(tunable.BlockSize), 1, 1};
+    const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable.BlockSize), 1, 1};
     const std::vector<size_t> vgd1_s = {
-        (invariantLength + tunable->BlockSize - 1) / tunable->BlockSize * tunable->BlockSize, 1, 1};
+        (invariantLength + tunable.BlockSize - 1) / tunable.BlockSize * tunable.BlockSize, 1, 1};
 
     const size_t realGridSize =
         InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
-    const std::vector<size_t> vgd2 = {realGridSize * tunable->BlockSize, 1, 1};
+    const std::vector<size_t> vgd2 = {realGridSize * tunable.BlockSize, 1, 1};
 
     std::string algo_name = "dynamic_generic_reduction";
 
@@ -666,7 +734,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     param += get_arch_specific_compiler_flag(handle);
 
     param += get_definition_string_from_types<TSrc, TComp, TDst>() + " " +
-             get_definition_string_from_tunable(tunable);
+             get_definition_string_from_tunable(reduceImpl, &tunable, useGlobalAtomicAdd);
 
     if(!reduceAllDims)
         param += " -DCK_PARAM_NUM_TOREDUCE_DIMS=" + std::to_string(mergedToReduceDims);
@@ -679,8 +747,10 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     param += " -DCK_PARAM_OUT_DIMS=";
     param += reduceAllDims ? "1" : std::to_string(mergedOutDims);
 
-    network_config = get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" +
-                     get_network_config_string_from_tunable(tunable) + "_";
+    network_config =
+        get_basic_network_config_string(reduceImpl, useGlobalAtomicAdd) +
+        get_network_config_string_from_types<TSrc, TComp, TDst>() + "_" +
+        get_network_config_string_from_tunable(reduceImpl, &tunable, useGlobalAtomicAdd) + "_";
 
     network_config += std::to_string(static_cast<int>(mapReduceOpId(reduceOp))) + "_";
     network_config += get_network_config_string_from_options(nanPropaOpt, reduceIndicesOpt);
@@ -689,7 +759,6 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
     network_config += "RED";
     network_config += std::to_string(mergedToReduceDims) + "_";
-    network_config += "BSIZE_" + std::to_string(tunable->BlockSize);
 
     std::vector<float> kernel1_times;
     std::vector<float> kernel2_times;
@@ -706,10 +775,10 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
                                             invariantLength,
                                             toReduceLength,
                                             GridSize,
-                                            tunable->BlockSize,
+                                            tunable.BlockSize,
                                             handle->GetWavefrontWidth(),
                                             BlkGroupSize,
-                                            tunable);
+                                            &tunable);
 
         std::string param1 = param +
                              " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding.first) +
@@ -830,16 +899,17 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             int GridSize_2 =
                 static_cast<int>(configurator.getGridSize_2(invariantLength, toReduceLength_2));
             const std::vector<size_t> vgd2_2 = {
-                static_cast<size_t>(GridSize_2) * tunable->BlockSize, size_t{1}, size_t{1}};
+                static_cast<size_t>(GridSize_2) * tunable.BlockSize, size_t{1}, size_t{1}};
             auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2);
+            auto tunable2    = getDefaultTunable(reduceImpl2);
             auto use_padding2 = get_padding_need(reduceImpl2,
                                                  invariantLength,
                                                  toReduceLength_2,
                                                  GridSize_2,
-                                                 tunable->BlockSize,
+                                                 tunable.BlockSize,
                                                  handle->GetWavefrontWidth(),
                                                  BlkGroupSize,
-                                                 tunable);
+                                                 &tunable2);
 
             std::string param2 = param +
                                  " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding2.first) +
