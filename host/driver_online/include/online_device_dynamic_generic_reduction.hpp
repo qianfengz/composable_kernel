@@ -733,8 +733,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
     param += get_arch_specific_compiler_flag(handle);
 
-    param += get_definition_string_from_types<TSrc, TComp, TDst>() + " " +
-             get_definition_string_from_tunable(reduceImpl, &tunable, useGlobalAtomicAdd);
+    param += get_definition_string_from_types<TSrc, TComp, TDst>();
 
     if(!reduceAllDims)
         param += " -DCK_PARAM_NUM_TOREDUCE_DIMS=" + std::to_string(mergedToReduceDims);
@@ -783,6 +782,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         std::string param1 = param +
                              " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding.first) +
                              " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding.second);
+
+        param1 += get_definition_string_from_tunable(reduceImpl, &tunable, useGlobalAtomicAdd);
 
         param1 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" + std::to_string(ReduceDimVectorSize);
         param1 += " -DCK_PARAM_INVARIANT_DIM_VECTOR_SIZE=" +
@@ -914,6 +915,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             std::string param2 = param +
                                  " -DCK_PARAM_SRC2D_PADDING=" + std::to_string(use_padding2.first) +
                                  " -DCK_PARAM_DST1D_PADDING=" + std::to_string(use_padding2.second);
+
+            param2 += get_definition_string_from_tunable(reduceImpl2, &tunable2);
 
             param2 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
                       std::to_string(get_dim_vector_size<TSrc>(toReduceLength_2, 1));
