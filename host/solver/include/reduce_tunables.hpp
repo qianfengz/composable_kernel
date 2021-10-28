@@ -13,8 +13,8 @@ struct tunable_generic_2d_reduction
     ck::index_t dim1_thread_slice_length;
     ck::index_t dim1_thread_cluster_length;
 
-    // false -- indicates lower Thread Id bits are assigned to dim0, upper Thread Id bits are
-    // assigned to dim1 true -- indicates upper Thread Ids bits are assigned to dim0, lower Thread
+    // true -- indicates lower Thread Id bits are assigned to dim0, upper Thread Id bits are
+    // assigned to dim1, false -- indicates upper Thread Ids bits are assigned to dim0, lower Thread
     // Id bits are assigned to dim1
     bool reordered_thread_clusters;
 };

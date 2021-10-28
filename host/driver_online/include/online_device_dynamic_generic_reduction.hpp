@@ -8,6 +8,8 @@
 
 #include <sstream>
 #include <cstdlib>
+#include <stdexcept>
+#include <array>
 
 // headers from composable kernel, to get consistent ID mapping
 #include <data_type_enum.hpp>
@@ -108,6 +110,92 @@ static tunable_generic_2d_reduction getDefaultTunable(ReductionMethod_t reduceIm
     return (tunable);
 };
 
+static tunable_generic_2d_reduction
+getTunableForMultiBlockGenericConfigure(int invariantLength,
+                                        int maxCUs,
+                                        int BlkGroupSize,
+                                        int invariant_dim_length,
+                                        int invariant_dim_stride,
+                                        int reduce_dim_length,
+                                        int reduce_dim_stride)
+{
+    assert(invariant_dim_stride == 1 || reduce_dim_stride == 1);
+
+    tunable_generic_2d_reduction tunable;
+
+    tunable.BlockSize = default_workgroup_size;
+
+    if(invariant_dim_stride == 1)
+    { // invariant dimension is the fastest
+        tunable.reordered_thread_clusters = true;
+
+        int cluster_length = 64;
+        // get max cluster_length that can divide invariant_dim_length completely
+        while(invariant_dim_length % cluster_length != 0)
+            cluster_length /= 2;
+
+        // try to reduce cluster_length if the total number of blocks is not enough for complete
+        // occupancy on GPU
+        while(invariantLength / cluster_length * BlkGroupSize < maxCUs)
+            cluster_length /= 2;
+
+        int slice_length = 1;
+
+        // check slice_length of 2, 4, 8
+        while(slice_length < 16)
+        {
+            int test_slice_len = slice_length * 2;
+            int test_tile_size = cluster_length * test_slice_len;
+
+            if(invariant_dim_length % test_tile_size == 0 &&
+               (invariant_dim_length / test_tile_size * BlkGroupSize) >= maxCUs)
+                slice_length = test_slice_len;
+            else
+                break;
+        }
+
+        // check slice_length of 11, 7, 5, 3
+        if(slice_length == 1)
+        {
+            static const std::array<int, 4> test_slice_lengths = {11, 7, 5, 3};
+            for(const auto test_slice_len : test_slice_lengths)
+            {
+                int test_tile_size = cluster_length * test_slice_len;
+
+                if(invariant_dim_length % test_tile_size == 0 &&
+                   (invariant_dim_length / test_tile_size * BlkGroupSize) >= maxCUs)
+                {
+                    slice_length = test_slice_len;
+                    break;
+                }
+            }
+        }
+
+        // tune the tile assignment between thread cluster and thread slice
+        while(cluster_length > 8 && slice_length < 4)
+        {
+            cluster_length /= 2;
+            slice_length *= 2;
+        }
+
+        tunable.dim0_thread_cluster_length = cluster_length;
+        tunable.dim0_thread_slice_length   = slice_length;
+        tunable.dim1_thread_cluster_length = default_workgroup_size / cluster_length;
+        tunable.dim1_thread_slice_length   = 1;
+    }
+    else
+    { // reduced dimension is the fastest
+        tunable.reordered_thread_clusters  = false;
+        tunable.dim0_thread_cluster_length = 256;
+        tunable.dim0_thread_slice_length   = 1;
+
+        tunable.dim1_thread_cluster_length = 1;
+        tunable.dim1_thread_slice_length   = 1;
+    }
+
+    return (tunable);
+};
+
 static std::string get_basic_network_config_string(ReductionMethod_t reduceImpl,
                                                    bool useGlobalAtomicAdd = false)
 {
@@ -168,7 +256,7 @@ static std::string get_definition_string_from_tunable(ReductionMethod_t reduceIm
             outs << " -DCK_PARAM_DIM0_THREAD_SLICE_LENGTH=" << pt->dim0_thread_slice_length;
             outs << " -DCK_PARAM_DIM1_THREAD_CLUSTER_LENGTH=" << pt->dim1_thread_cluster_length;
             outs << " -DCK_PARAM_DIM1_THREAD_SLICE_LENGTH=" << pt->dim1_thread_slice_length;
-            outs << " -DCK_PARAM_REORDERED_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
+            outs << " -DCK_PARAM_REORDER_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
 #else
             outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
 #endif
@@ -507,7 +595,11 @@ static std::string get_kernel_file_name(const bool isSecondCall,
         else
             outs << "_reduce_partial_dims";
 
+#ifdef TEST_GENERIC_CONFIG
+        outs << "_atomic_add_gc.cpp";
+#else
         outs << "_atomic_add.cpp";
+#endif
     }
     else
     {
@@ -717,13 +809,35 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
     auto tunable = getDefaultTunable(reduceImpl);
 
+#ifdef TEST_GENERIC_CONFIG
+    // For MultiBlock + AtomicAdd path, we use specific tunable values
+    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd &&
+       (invariantLength * BlkGroupSize >= 2 * handle->GetMaxComputeUnits()))
+        tunable = getTunableForMultiBlockGenericConfigure(
+            invariantLength,
+            handle->GetMaxComputeUnits(),
+            BlkGroupSize,
+            p_inLengths[mergedInvariantDims - 1],
+            p_inStrides[mergedInvariantDims - 1],
+            p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
+            p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]);
+#endif
+
     const std::vector<size_t> vld    = {static_cast<size_t>(tunable.BlockSize), 1, 1};
     const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable.BlockSize), 1, 1};
     const std::vector<size_t> vgd1_s = {
         (invariantLength + tunable.BlockSize - 1) / tunable.BlockSize * tunable.BlockSize, 1, 1};
 
-    const size_t realGridSize =
-        InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
+    size_t realGridSize;
+#ifdef TEST_GENERIC_CONFIG
+    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+        realGridSize =
+            GridSize / (tunable.dim0_thread_cluster_length * tunable.dim0_thread_slice_length);
+    else
+        realGridSize = InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
+#else
+    realGridSize = InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
+#endif
     const std::vector<size_t> vgd2 = {realGridSize * tunable.BlockSize, 1, 1};
 
     std::string algo_name = "dynamic_generic_reduction";
