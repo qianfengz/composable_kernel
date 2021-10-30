@@ -298,6 +298,8 @@ static void dumpBufferToFile(const char* fileName, T* data, size_t dataNumItems)
 
 static void check_indices(const Tensor<int>& ref, const Tensor<int>& result)
 {
+    bool has_error=false; 
+
     for(int i = 0; i < ref.mData.size(); ++i)
     {
         if(ref.mData[i] != result.mData[i])
@@ -305,11 +307,13 @@ static void check_indices(const Tensor<int>& ref, const Tensor<int>& result)
             std::cerr << std::endl
                       << "Indices different at position " << i << " (ref: " << ref.mData[i]
                       << ", result: " << result.mData[i] << ")" << std::endl;
+            has_error = true; 
             break;
         };
     }
 
-    std::cout << std::endl << "Indices result is completely acccurate!" << std::endl;
+    if (!has_error)
+        std::cout << std::endl << "Indices result is completely acccurate!" << std::endl;
 }
 
 template <typename dataType, typename compType>

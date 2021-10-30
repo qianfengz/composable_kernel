@@ -51,6 +51,19 @@ static ck::DataTypeEnum_t mapDataTypeId(appDataType_t t)
     };
 };
 
+static int maxVectorSizeForType(appDataType_t t)
+{
+    using ck::DataTypeEnum_t;
+
+    switch(t)
+    {
+    case appFloat: return 4;
+    case appDouble: return 2;
+    case appHalf: return 8;
+    default: throw std::runtime_error("Only float, half, double data type is supported.");
+    };
+};
+
 static ck::ReduceTensorOp_t mapReduceOpId(ReduceTensorOp_t t)
 {
     switch(t)
@@ -110,8 +123,10 @@ static tunable_generic_2d_reduction getDefaultTunable(ReductionMethod_t reduceIm
     return (tunable);
 };
 
+template <typename TSrc>
 static tunable_generic_2d_reduction
-getTunableForMultiBlockGenericConfigure(int invariantLength,
+getTunableForMultiBlockGenericConfigure(bool need_indices,
+                                        int invariantLength,
                                         int maxCUs,
                                         int BlkGroupSize,
                                         int invariant_dim_length,
@@ -119,6 +134,12 @@ getTunableForMultiBlockGenericConfigure(int invariantLength,
                                         int reduce_dim_length,
                                         int reduce_dim_stride)
 {
+    appDataType_t TSrcId = Driver::get_type_enum_from_type<TSrc>();
+
+    // not used at present
+    (void)reduce_dim_length;
+    (void)reduce_dim_stride;
+
     assert(invariant_dim_stride == 1 || reduce_dim_stride == 1);
 
     tunable_generic_2d_reduction tunable;
@@ -148,7 +169,7 @@ getTunableForMultiBlockGenericConfigure(int invariantLength,
             int test_tile_size = cluster_length * test_slice_len;
 
             if(invariant_dim_length % test_tile_size == 0 &&
-               (invariant_dim_length / test_tile_size * BlkGroupSize) >= maxCUs)
+               (invariantLength / test_tile_size * BlkGroupSize) >= maxCUs)
                 slice_length = test_slice_len;
             else
                 break;
@@ -163,7 +184,7 @@ getTunableForMultiBlockGenericConfigure(int invariantLength,
                 int test_tile_size = cluster_length * test_slice_len;
 
                 if(invariant_dim_length % test_tile_size == 0 &&
-                   (invariant_dim_length / test_tile_size * BlkGroupSize) >= maxCUs)
+                   (invariantLength / test_tile_size * BlkGroupSize) >= maxCUs)
                 {
                     slice_length = test_slice_len;
                     break;
@@ -181,16 +202,17 @@ getTunableForMultiBlockGenericConfigure(int invariantLength,
         tunable.dim0_thread_cluster_length = cluster_length;
         tunable.dim0_thread_slice_length   = slice_length;
         tunable.dim1_thread_cluster_length = default_workgroup_size / cluster_length;
-        tunable.dim1_thread_slice_length   = 1;
+        tunable.dim1_thread_slice_length =
+            need_indices ? maxVectorSizeForType(TSrcId) : 1; // TODO: more tuning
     }
     else
     { // reduced dimension is the fastest
         tunable.reordered_thread_clusters  = false;
-        tunable.dim0_thread_cluster_length = 256;
+        tunable.dim0_thread_cluster_length = 1;
         tunable.dim0_thread_slice_length   = 1;
 
-        tunable.dim1_thread_cluster_length = 1;
-        tunable.dim1_thread_slice_length   = 1;
+        tunable.dim1_thread_cluster_length = default_workgroup_size;
+        tunable.dim1_thread_slice_length   = maxVectorSizeForType(TSrcId); // TODO: more tuning
     }
 
     return (tunable);
@@ -214,7 +236,7 @@ static std::string get_network_config_string_from_tunable(ReductionMethod_t redu
 
     outs << "TUN_" << pt->BlockSize << "_";
 
-    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+    if(reduceImpl == ReductionMethod_t::MultiBlock)
     {
 #ifdef TEST_GENERIC_CONFIG
         outs << pt->dim0_thread_cluster_length << "_" << pt->dim0_thread_slice_length << "_";
@@ -249,25 +271,21 @@ static std::string get_definition_string_from_tunable(ReductionMethod_t reduceIm
 
     if(reduceImpl == ReductionMethod_t::MultiBlock)
     {
-        if(useGlobalAtomicAdd)
-        {
 #ifdef TEST_GENERIC_CONFIG
-            outs << " -DCK_PARAM_DIM0_THREAD_CLUSTER_LENGTH=" << pt->dim0_thread_cluster_length;
-            outs << " -DCK_PARAM_DIM0_THREAD_SLICE_LENGTH=" << pt->dim0_thread_slice_length;
-            outs << " -DCK_PARAM_DIM1_THREAD_CLUSTER_LENGTH=" << pt->dim1_thread_cluster_length;
-            outs << " -DCK_PARAM_DIM1_THREAD_SLICE_LENGTH=" << pt->dim1_thread_slice_length;
-            outs << " -DCK_PARAM_REORDER_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
+        outs << " -DCK_PARAM_DIM0_THREAD_CLUSTER_LENGTH=" << pt->dim0_thread_cluster_length;
+        outs << " -DCK_PARAM_DIM0_THREAD_SLICE_LENGTH=" << pt->dim0_thread_slice_length;
+        outs << " -DCK_PARAM_DIM1_THREAD_CLUSTER_LENGTH=" << pt->dim1_thread_cluster_length;
+        outs << " -DCK_PARAM_DIM1_THREAD_SLICE_LENGTH=" << pt->dim1_thread_slice_length;
+        outs << " -DCK_PARAM_REORDER_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
 #else
-            outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
+        outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
 #endif
-        }
-        else
-            outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
     }
 
     return (outs.str());
 };
 
+/*
 static int getBlocksForEnoughUtilization(const online_compile::Handle* handle, int BlockSize)
 {
     int numCUs           = handle->GetMaxComputeUnits();
@@ -277,6 +295,7 @@ static int getBlocksForEnoughUtilization(const online_compile::Handle* handle, i
     //          2) need 30 active waves for a complete utilization of one SIMD
     return (numCUs * 4 * 30 / numWarpsPerBlock);
 };
+*/
 
 struct ReductionKernelConfigurator
 {
@@ -466,7 +485,7 @@ static std::pair<bool, bool> get_padding_need(ReductionMethod_t reduceImpl,
         src_need_padding = (toReduceLen % copySliceLen > 0) ? true : false;
         break;
     case ReductionMethod_t::MultiBlock:
-        copySliceLen = BlockSize * tunable->dim1_thread_slice_length;
+        copySliceLen = tunable->dim1_thread_cluster_length * tunable->dim1_thread_slice_length;
         reduceSizePerBlock =
             (((toReduceLen + BlkGroupSize - 1) / BlkGroupSize + copySliceLen - 1) / copySliceLen) *
             copySliceLen;
@@ -586,7 +605,7 @@ static std::string get_kernel_file_name(const bool isSecondCall,
 {
     std::ostringstream outs;
 
-    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+    if(reduceImpl == ReductionMethod_t::MultiBlock)
     {
         outs << "gridwise_generic_reduction_" << getReductionMethodStr(reduceImpl);
 
@@ -595,10 +614,13 @@ static std::string get_kernel_file_name(const bool isSecondCall,
         else
             outs << "_reduce_partial_dims";
 
+        if(useGlobalAtomicAdd)
+            outs << "_atomic_add";
+
 #ifdef TEST_GENERIC_CONFIG
-        outs << "_atomic_add_gc.cpp";
+        outs << "_gc.cpp";
 #else
-        outs << "_atomic_add.cpp";
+        outs << ".cpp";
 #endif
     }
     else
@@ -648,23 +670,23 @@ static int merge_packed_dimensions(int* dimLengths, int* dimStrides, int numDims
 };
 
 template <typename dataType>
-static int get_dim_vector_size(int dimLength, int dimStride)
+static int get_dim_max_vector_size(int dimLength, int dimStride)
 {
     appDataType_t dataTypeId = Driver::get_type_enum_from_type<dataType>();
+    int len                  = maxVectorSizeForType(dataTypeId);
 
     if(dimStride != 1)
         return (1);
 
-    if(dataTypeId != appDouble && dimLength % 8 == 0)
-        return (8);
+    while(len != 1)
+    {
+        if(dimLength % len == 0)
+            break;
 
-    if(dimLength % 4 == 0)
-        return (4);
+        len /= 2;
+    }
 
-    if(dimLength % 2 == 0)
-        return (2);
-
-    return (1);
+    return (len);
 };
 
 } // namespace detail_dyn_generic_reduction
@@ -765,10 +787,10 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     };
 
     int ReduceDimVectorSize =
-        get_dim_vector_size<TSrc>(p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
-                                  p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]);
-    int InvariantDimVectorSize = get_dim_vector_size<TSrc>(p_inLengths[mergedInvariantDims - 1],
-                                                           p_inStrides[mergedInvariantDims - 1]);
+        get_dim_max_vector_size<TSrc>(p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
+                                      p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]);
+    int InvariantDimVectorSize = get_dim_max_vector_size<TSrc>(
+        p_inLengths[mergedInvariantDims - 1], p_inStrides[mergedInvariantDims - 1]);
 
     auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
 
@@ -810,10 +832,11 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     auto tunable = getDefaultTunable(reduceImpl);
 
 #ifdef TEST_GENERIC_CONFIG
-    // For MultiBlock + AtomicAdd path, we use specific tunable values
-    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd &&
+    // For MultiBlock path, we use specific tunable values
+    if(reduceImpl == ReductionMethod_t::MultiBlock &&
        (invariantLength * BlkGroupSize >= 2 * handle->GetMaxComputeUnits()))
-        tunable = getTunableForMultiBlockGenericConfigure(
+        tunable = getTunableForMultiBlockGenericConfigure<TSrc>(
+            need_indices,
             invariantLength,
             handle->GetMaxComputeUnits(),
             BlkGroupSize,
@@ -830,7 +853,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
     size_t realGridSize;
 #ifdef TEST_GENERIC_CONFIG
-    if(reduceImpl == ReductionMethod_t::MultiBlock && useGlobalAtomicAdd)
+    if(reduceImpl == ReductionMethod_t::MultiBlock)
         realGridSize =
             GridSize / (tunable.dim0_thread_cluster_length * tunable.dim0_thread_slice_length);
     else
@@ -1033,7 +1056,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             param2 += get_definition_string_from_tunable(reduceImpl2, &tunable2);
 
             param2 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
-                      std::to_string(get_dim_vector_size<TSrc>(toReduceLength_2, 1));
+                      std::to_string(get_dim_max_vector_size<TSrc>(toReduceLength_2, 1));
 
             std::string program_name2    = get_kernel_file_name(true, reduceImpl2, reduceAllDims);
             std::string kernel_name2     = "gridwise_generic_reduce_2_prepare";
