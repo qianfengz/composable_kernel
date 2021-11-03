@@ -195,32 +195,8 @@ static inline compType ReduceOpZeroVal(ReduceTensorOp_t op_)
 
     case REDUCE_TENSOR_MIN: return (std::numeric_limits<compType>::max());
 
-    case REDUCE_TENSOR_MAX: return (std::numeric_limits<compType>::min());
+    case REDUCE_TENSOR_MAX: return (std::numeric_limits<compType>::lowest());
     case REDUCE_TENSOR_AMAX: return (convert_type<compType>(0.0f));
-    }
-
-    throw std::runtime_error(std::string(__FUNCTION__) +
-                             ": using undefined Reduction operation is not permitted");
-};
-
-template <>
-inline half_float::half ReduceOpZeroVal<half_float::half>(ReduceTensorOp_t op_)
-{
-    switch(op_)
-    {
-    case REDUCE_TENSOR_ADD:
-    case REDUCE_TENSOR_AVG:
-    case REDUCE_TENSOR_NORM1:
-    case REDUCE_TENSOR_NORM2:
-
-    case REDUCE_TENSOR_MUL: return (convert_type<half_float::half>(1.0f));
-
-    case REDUCE_TENSOR_MIN:
-        return (convert_type<half_float::half>(std::numeric_limits<float>::max()));
-
-    case REDUCE_TENSOR_MAX:
-        return (convert_type<half_float::half>(std::numeric_limits<float>::min()));
-    case REDUCE_TENSOR_AMAX: return (convert_type<half_float::half>(0.0f));
     }
 
     throw std::runtime_error(std::string(__FUNCTION__) +
