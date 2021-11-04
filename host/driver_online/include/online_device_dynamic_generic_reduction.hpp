@@ -199,6 +199,18 @@ getTunableForMultiBlockGenericConfigure(bool need_indices,
             slice_length *= 2;
         }
 
+        // further tune the thread slice if cluster_length == 2 and slice_length is 11, 7, 5, 3
+        // Some strange compiler issue with the slice_length 11, 7, 5, 3
+        if(cluster_length == 2 && (slice_length > 1 && slice_length % 2 == 1))
+        {
+            cluster_length /= 2;
+            slice_length *= 2;
+        }
+
+        // Some strange compiler issue with the slice_length 11, 7, 5, 3
+        if(need_indices && (slice_length % 2 == 1))
+            slice_length = 1;
+
         tunable.dim0_thread_cluster_length = cluster_length;
         tunable.dim0_thread_slice_length   = slice_length;
         tunable.dim1_thread_cluster_length = default_workgroup_size / cluster_length;
@@ -260,27 +272,11 @@ static std::string get_definition_string_from_tunable(ReductionMethod_t reduceIm
 
     outs << " -DCK_PARAM_BLOCKSIZE=" << pt->BlockSize;
 
-    if(reduceImpl == ReductionMethod_t::DirectThreadWise)
-        outs << " -DCK_PARAM_THREAD_BUFFER_LENGTH=" << pt->dim1_thread_slice_length;
-
-    if(reduceImpl == ReductionMethod_t::DirectWarpWise)
-        outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INWARP=" << pt->dim1_thread_slice_length;
-
-    if(reduceImpl == ReductionMethod_t::BlockWise)
-        outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
-
-    if(reduceImpl == ReductionMethod_t::MultiBlock)
-    {
-#ifdef TEST_GENERIC_CONFIG
-        outs << " -DCK_PARAM_DIM0_THREAD_CLUSTER_LENGTH=" << pt->dim0_thread_cluster_length;
-        outs << " -DCK_PARAM_DIM0_THREAD_SLICE_LENGTH=" << pt->dim0_thread_slice_length;
-        outs << " -DCK_PARAM_DIM1_THREAD_CLUSTER_LENGTH=" << pt->dim1_thread_cluster_length;
-        outs << " -DCK_PARAM_DIM1_THREAD_SLICE_LENGTH=" << pt->dim1_thread_slice_length;
-        outs << " -DCK_PARAM_REORDER_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
-#else
-        outs << " -DCK_PARAM_ACCESSES_PER_THREAD_INBLOCK=" << pt->dim1_thread_slice_length;
-#endif
-    }
+    outs << " -DCK_PARAM_DIM0_THREAD_CLUSTER_LENGTH=" << pt->dim0_thread_cluster_length;
+    outs << " -DCK_PARAM_DIM0_THREAD_SLICE_LENGTH=" << pt->dim0_thread_slice_length;
+    outs << " -DCK_PARAM_DIM1_THREAD_CLUSTER_LENGTH=" << pt->dim1_thread_cluster_length;
+    outs << " -DCK_PARAM_DIM1_THREAD_SLICE_LENGTH=" << pt->dim1_thread_slice_length;
+    outs << " -DCK_PARAM_REORDER_THREAD_CLUSTERS=" << pt->reordered_thread_clusters;
 
     return (outs.str());
 };
@@ -852,15 +848,15 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         (invariantLength + tunable.BlockSize - 1) / tunable.BlockSize * tunable.BlockSize, 1, 1};
 
     size_t realGridSize;
-#ifdef TEST_GENERIC_CONFIG
+
     if(reduceImpl == ReductionMethod_t::MultiBlock)
         realGridSize =
             GridSize / (tunable.dim0_thread_cluster_length * tunable.dim0_thread_slice_length);
     else
         realGridSize = InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
-#else
-    realGridSize = InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
-#endif
+
+    std::cout << "realGridSize=" << realGridSize << " BlkGroupSize=" << BlkGroupSize << std::endl;
+
     const std::vector<size_t> vgd2 = {realGridSize * tunable.BlockSize, 1, 1};
 
     std::string algo_name = "dynamic_generic_reduction";

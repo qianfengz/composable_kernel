@@ -298,7 +298,8 @@ static void dumpBufferToFile(const char* fileName, T* data, size_t dataNumItems)
 
 static void check_indices(const Tensor<int>& ref, const Tensor<int>& result)
 {
-    bool has_error=false; 
+    bool has_error  = false;
+    int error_count = 0;
 
     for(int i = 0; i < ref.mData.size(); ++i)
     {
@@ -307,12 +308,14 @@ static void check_indices(const Tensor<int>& ref, const Tensor<int>& result)
             std::cerr << std::endl
                       << "Indices different at position " << i << " (ref: " << ref.mData[i]
                       << ", result: " << result.mData[i] << ")" << std::endl;
-            has_error = true; 
-            break;
+            has_error = true;
+            error_count++;
+            if(error_count == 20)
+                break;
         };
     }
 
-    if (!has_error)
+    if(!has_error)
         std::cout << std::endl << "Indices result is completely acccurate!" << std::endl;
 }
 
@@ -402,7 +405,7 @@ static void do_reduce_testing(online_compile::Handle* handle)
                 out_host.GenerateTensorValue(GeneratorTensor_1{}, num_thread);
             break;
         case 1:
-            in.GenerateTensorValue(GeneratorTensor_2{-5, 5}, num_thread);
+            in.GenerateTensorValue(GeneratorTensor_2{-999, 999}, num_thread);
             if(beta != 0.0f)
                 out_host.GenerateTensorValue(GeneratorTensor_2{-5, 5}, num_thread);
             break;
