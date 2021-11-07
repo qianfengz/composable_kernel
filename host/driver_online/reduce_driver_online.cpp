@@ -30,6 +30,7 @@ static struct option long_options[] = {{"inLengths", required_argument, NULL, 'D
                                        {"toReduceDims", required_argument, NULL, 'R'},
                                        {"reduceOp", required_argument, NULL, 'O'},
                                        {"compType", required_argument, NULL, 'C'},
+                                       {"outType", required_argument, NULL, 'W'},
                                        {"nanOpt", required_argument, NULL, 'N'},
                                        {"indicesOpt", required_argument, NULL, 'I'},
                                        {"scales", required_argument, NULL, 'S'},
@@ -103,6 +104,9 @@ static void show_usage(const char* cmd)
     std::cout << "--compType or -C, enum value indicating the type of accumulated values used "
                  "during the reduction"
               << std::endl;
+    std::cout << "--outType or -W, optional enum value indicating the type of the reduced output, "
+                 "which could be float when the input data is half"
+              << std::endl;
     std::cout << "--nanOpt or -N, enum value indicates the selection for NanOpt" << std::endl;
     std::cout << "--indicesOpt or -I, enum value indicates the selection for IndicesOpt"
               << std::endl;
@@ -112,7 +116,7 @@ static void show_usage(const char* cmd)
     std::cout << "--verify or -v, 1/0 to indicate whether to verify the reduction result by "
                  "comparing with the host-based reduction"
               << std::endl;
-    std::cout << "--dumpout or -o, 1/0 to indicate wheter to save the reduction result to files "
+    std::cout << "--dumpout or -o, 1/0 to indicate where to save the reduction result to files "
                  "for further analysis"
               << std::endl;
     std::cout << "--log or -l, 1/0 to indicate whether to log some information" << std::endl;
@@ -157,7 +161,9 @@ static vector<float> scales;
 
 static ReduceTensorOp_t reduceOp        = ReduceTensorOp_t::REDUCE_TENSOR_ADD;
 static appDataType_t compTypeId         = appFloat;
+static appDataType_t outTypeId          = appFloat;
 static bool compType_assigned           = false;
+static bool outType_assigned            = false;
 static NanPropagation_t nanOpt          = NanPropagation_t::NOT_PROPAGATE_NAN;
 static ReduceTensorIndices_t indicesOpt = ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES;
 static bool do_logging                  = false;
@@ -175,7 +181,7 @@ static void check_cmdline_arguments(int argc, char* argv[])
 
     while(1)
     {
-        ch = getopt_long(argc, argv, "D:R:O:C:N:I:S:v:o:l:", long_options, &option_index);
+        ch = getopt_long(argc, argv, "D:R:O:C:W:N:I:S:v:o:l:", long_options, &option_index);
         if(ch == -1)
             break;
         switch(ch)
@@ -204,6 +210,13 @@ static void check_cmdline_arguments(int argc, char* argv[])
 
             compTypeId        = static_cast<appDataType_t>(std::atoi(optarg));
             compType_assigned = true;
+            break;
+        case 'W':
+            if(!optarg)
+                throw std::runtime_error("Invalid option format!");
+
+            outTypeId        = static_cast<appDataType_t>(std::atoi(optarg));
+            outType_assigned = true;
             break;
         case 'N':
             if(!optarg)
@@ -273,11 +286,19 @@ static void check_cmdline_arguments(int argc, char* argv[])
         scales.push_back(0.0f);
     };
 
-    if((reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MIN ||
-        reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MAX ||
-        reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_AMAX) &&
-       indicesOpt != ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES)
-        need_indices = true;
+    if(reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MIN ||
+       reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MAX ||
+       reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_AMAX)
+    {
+
+        if(indicesOpt != ReduceTensorIndices_t::REDUCE_TENSOR_NO_INDICES)
+            need_indices = true;
+
+        // for indexable operations, no need to assign compType and outType, just let them be same
+        // as inType
+        compType_assigned = false;
+        outType_assigned  = false;
+    };
 };
 
 template <typename T>
@@ -319,7 +340,7 @@ static void check_indices(const Tensor<int>& ref, const Tensor<int>& result)
         std::cout << std::endl << "Indices result is completely acccurate!" << std::endl;
 }
 
-template <typename dataType, typename compType>
+template <typename inType, typename compType, typename outType>
 static void do_reduce_testing(online_compile::Handle* handle);
 
 int main(int argc, char* argv[])
@@ -355,21 +376,37 @@ int main(int argc, char* argv[])
         if(!compType_assigned)
             compTypeId = appHalf;
 
+        if(outType_assigned && (outTypeId != appHalf && outTypeId != appFloat))
+            outTypeId = appFloat;
+
+        if(!outType_assigned)
+            outTypeId = appHalf;
+
         if(compTypeId == appHalf)
-            do_reduce_testing<half_float::half, half_float::half>(handle);
+        {
+            if(outTypeId == appHalf)
+                do_reduce_testing<half_float::half, half_float::half, half_float::half>(handle);
+            else
+                do_reduce_testing<half_float::half, half_float::half, float>(handle);
+        }
         else if(compTypeId == appFloat)
-            do_reduce_testing<half_float::half, float>(handle);
+        {
+            if(outTypeId == appHalf)
+                do_reduce_testing<half_float::half, float, half_float::half>(handle);
+            else
+                do_reduce_testing<half_float::half, float, float>(handle);
+        }
         else
             throw std::runtime_error("Invalid compType assignment!");
     }
     else if(use_double)
-        do_reduce_testing<double, double>(handle);
+        do_reduce_testing<double, double, double>(handle);
     else
     {
         if(compTypeId == appFloat)
-            do_reduce_testing<float, float>(handle);
+            do_reduce_testing<float, float, float>(handle);
         else if(compTypeId == appDouble)
-            do_reduce_testing<float, double>(handle);
+            do_reduce_testing<float, double, float>(handle);
         else
             throw std::runtime_error("Invalid compType assignment!");
     };
@@ -378,12 +415,12 @@ int main(int argc, char* argv[])
     MY_HIP_CHECK(hipStreamDestroy(stream));
 };
 
-template <typename dataType, typename compType>
+template <typename inType, typename compType, typename outType>
 static void do_reduce_testing(online_compile::Handle* handle)
 {
-    Tensor<dataType> in(inLengths);
-    Tensor<dataType> out_host(outLengths);
-    Tensor<dataType> out_dev(outLengths);
+    Tensor<inType> in(inLengths);
+    Tensor<outType> out_host(outLengths);
+    Tensor<outType> out_dev(outLengths);
     Tensor<int> out_indices_host(outLengths);
     Tensor<int> out_indices_dev(outLengths);
 
@@ -405,7 +442,7 @@ static void do_reduce_testing(online_compile::Handle* handle)
                 out_host.GenerateTensorValue(GeneratorTensor_1{}, num_thread);
             break;
         case 1:
-            in.GenerateTensorValue(GeneratorTensor_2{-999, 999}, num_thread);
+            in.GenerateTensorValue(GeneratorTensor_2{-99, 99}, num_thread);
             if(beta != 0.0f)
                 out_host.GenerateTensorValue(GeneratorTensor_2{-5, 5}, num_thread);
             break;
@@ -420,29 +457,29 @@ static void do_reduce_testing(online_compile::Handle* handle)
                 out_dev.mData[i] = out_host.mData[i];
     }
 
-    device_dynamic_generic_reduction_olc<dataType, compType, dataType>(handle,
-                                                                       invariantDims,
-                                                                       toReduceDims,
-                                                                       in,
-                                                                       out_dev,
-                                                                       out_indices_dev,
-                                                                       reduceOp,
-                                                                       nanOpt,
-                                                                       indicesOpt,
-                                                                       alpha,
-                                                                       beta,
-                                                                       nrepeat);
+    device_dynamic_generic_reduction_olc<inType, compType, outType>(handle,
+                                                                    invariantDims,
+                                                                    toReduceDims,
+                                                                    in,
+                                                                    out_dev,
+                                                                    out_indices_dev,
+                                                                    reduceOp,
+                                                                    nanOpt,
+                                                                    indicesOpt,
+                                                                    alpha,
+                                                                    beta,
+                                                                    nrepeat);
 
     if(do_verification)
     {
-        ReductionHost<dataType, dataType> hostReduce(reduceOp,
-                                                     compTypeId,
-                                                     nanOpt,
-                                                     indicesOpt,
-                                                     in.mDesc,
-                                                     out_host.mDesc,
-                                                     invariantDims,
-                                                     toReduceDims);
+        ReductionHost<inType, outType> hostReduce(reduceOp,
+                                                  compTypeId,
+                                                  nanOpt,
+                                                  indicesOpt,
+                                                  in.mDesc,
+                                                  out_host.mDesc,
+                                                  invariantDims,
+                                                  toReduceDims);
 
         hostReduce.Run(
             alpha, in.mData.data(), beta, out_host.mData.data(), out_indices_host.mData.data());
