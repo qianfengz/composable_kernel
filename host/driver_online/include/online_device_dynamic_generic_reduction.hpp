@@ -207,10 +207,6 @@ getTunableForMultiBlockGenericConfigure(bool need_indices,
             slice_length *= 2;
         }
 
-        // Some strange compiler issue with the slice_length 11, 7, 5, 3
-        if(need_indices && (slice_length % 2 == 1))
-            slice_length = 1;
-
         tunable.dim0_thread_cluster_length = cluster_length;
         tunable.dim0_thread_slice_length   = slice_length;
         tunable.dim1_thread_cluster_length = default_workgroup_size / cluster_length;
@@ -226,6 +222,27 @@ getTunableForMultiBlockGenericConfigure(bool need_indices,
         tunable.dim1_thread_cluster_length = default_workgroup_size;
         tunable.dim1_thread_slice_length   = maxVectorSizeForType(TSrcId); // TODO: more tuning
     }
+
+    // try to make the dim1_thread_slice_length bigger since for each slice access, a parallel
+    // reduction is needed to keep the indices consistent. So for better performance, bigger slice
+    // length is better
+    if(need_indices)
+    {
+        int reduceSizePerBlock = (invariant_dim_length + BlkGroupSize - 1) / BlkGroupSize;
+
+        int slice_length = tunable.dim1_thread_slice_length;
+
+        while(tunable.BlockSize * slice_length < reduceSizePerBlock)
+        {
+            // need to restrict the total VGPRS used for thread slice
+            if(tunable.dim0_thread_slice_length * slice_length * 2 <= 64)
+                slice_length *= 2;
+            else
+                break;
+        };
+
+        tunable.dim1_thread_slice_length = slice_length;
+    };
 
     return (tunable);
 };
@@ -573,27 +590,6 @@ static bool useGlobalAtomicAddReduce(const ReduceTensorOp_t reduceOp,
     return (true);
 };
 
-static bool useVectorLoadOnInvariantDim(const ReductionMethod_t reduceImpl,
-                                        int InvariantDimVectorSize,
-                                        bool use_indices)
-{
-    if(getEnvVarValue("DEBUG_USE_INVARIANT_DIM_VECTOR_LOAD") == 0)
-        return (false);
-
-    if(use_indices)
-        return (false);
-
-    // At first, vector_load on invariant dim can only be used with MultiBlock kernel, gradually
-    // it will be extended for using with other reduction kernel
-    if(reduceImpl != ReductionMethod_t::MultiBlock)
-        return (false);
-
-    if(InvariantDimVectorSize <= 1)
-        return (false);
-
-    return (true);
-};
-
 static std::string get_kernel_file_name(const bool isSecondCall,
                                         const ReductionMethod_t reduceImpl,
                                         const bool allDimsReduced,
@@ -671,6 +667,7 @@ static int get_dim_max_vector_size(int dimLength, int dimStride)
     appDataType_t dataTypeId = Driver::get_type_enum_from_type<dataType>();
     int len                  = maxVectorSizeForType(dataTypeId);
 
+    // not fastest dim
     if(dimStride != 1)
         return (1);
 
@@ -788,6 +785,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int InvariantDimVectorSize = get_dim_max_vector_size<TSrc>(
         p_inLengths[mergedInvariantDims - 1], p_inStrides[mergedInvariantDims - 1]);
 
+    bool InvariantDimIsFastest = p_inStrides[mergedInvariantDims - 1] == 1 ? true : false;
+
     auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
 
     bool need_indices = (reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES) &&
@@ -822,9 +821,6 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     const bool useGlobalAtomicAdd =
         useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);
 
-    const bool InvariantDimVectorLoad =
-        useVectorLoadOnInvariantDim(reduceImpl, InvariantDimVectorSize, need_indices);
-
     auto tunable = getDefaultTunable(reduceImpl);
 
 #ifdef TEST_GENERIC_CONFIG
@@ -853,7 +849,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         realGridSize =
             GridSize / (tunable.dim0_thread_cluster_length * tunable.dim0_thread_slice_length);
     else
-        realGridSize = InvariantDimVectorLoad ? GridSize / InvariantDimVectorSize : GridSize;
+        realGridSize = GridSize;
 
     std::cout << "realGridSize=" << realGridSize << " BlkGroupSize=" << BlkGroupSize << std::endl;
 
@@ -919,8 +915,12 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         param1 += get_definition_string_from_tunable(reduceImpl, &tunable, useGlobalAtomicAdd);
 
         param1 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" + std::to_string(ReduceDimVectorSize);
-        param1 += " -DCK_PARAM_INVARIANT_DIM_VECTOR_SIZE=" +
-                  std::to_string(InvariantDimVectorLoad ? InvariantDimVectorSize : 1);
+        param1 += " -DCK_PARAM_INVARIANT_DIM_VECTOR_SIZE=" + std::to_string(InvariantDimVectorSize);
+
+        if(InvariantDimIsFastest)
+            param1 += " -DCK_PARAM_INVARIANT_DIM_IS_FASTEST=1";
+        else
+            param1 += " -DCK_PARAM_INVARIANT_DIM_IS_FASTEST=0";
 
         std::string program_name1 =
             get_kernel_file_name(false, reduceImpl, reduceAllDims, useGlobalAtomicAdd);
@@ -1053,6 +1053,8 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
             param2 += " -DCK_PARAM_REDUCE_DIM_VECTOR_SIZE=" +
                       std::to_string(get_dim_max_vector_size<TSrc>(toReduceLength_2, 1));
+
+            param2 += " -DCK_PARAM_INVARIANT_DIM_IS_FASTEST=0";
 
             std::string program_name2    = get_kernel_file_name(true, reduceImpl2, reduceAllDims);
             std::string kernel_name2     = "gridwise_generic_reduce_2_prepare";
