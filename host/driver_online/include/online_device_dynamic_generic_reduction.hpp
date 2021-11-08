@@ -267,13 +267,9 @@ static std::string get_network_config_string_from_tunable(ReductionMethod_t redu
 
     if(reduceImpl == ReductionMethod_t::MultiBlock)
     {
-#ifdef TEST_GENERIC_CONFIG
         outs << pt->dim0_thread_cluster_length << "_" << pt->dim0_thread_slice_length << "_";
         outs << pt->dim1_thread_cluster_length << "_" << pt->dim1_thread_slice_length << "_";
         outs << pt->reordered_thread_clusters;
-#else
-        outs << pt->dim1_thread_slice_length << "_";
-#endif
     }
     else
         outs << pt->dim1_thread_slice_length << "_";
@@ -609,11 +605,7 @@ static std::string get_kernel_file_name(const bool isSecondCall,
         if(useGlobalAtomicAdd)
             outs << "_atomic_add";
 
-#ifdef TEST_GENERIC_CONFIG
         outs << "_gc.cpp";
-#else
-        outs << ".cpp";
-#endif
     }
     else
     {
@@ -823,7 +815,6 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
 
     auto tunable = getDefaultTunable(reduceImpl);
 
-#ifdef TEST_GENERIC_CONFIG
     // For MultiBlock path, we use specific tunable values
     if(reduceImpl == ReductionMethod_t::MultiBlock &&
        (invariantLength * BlkGroupSize >= 2 * handle->GetMaxComputeUnits()))
@@ -836,7 +827,6 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
             p_inStrides[mergedInvariantDims - 1],
             p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
             p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]);
-#endif
 
     const std::vector<size_t> vld    = {static_cast<size_t>(tunable.BlockSize), 1, 1};
     const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable.BlockSize), 1, 1};
