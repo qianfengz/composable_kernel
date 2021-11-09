@@ -105,148 +105,6 @@ static std::string get_definition_string_from_types()
     return (outs.str());
 };
 
-static tunable_generic_2d_reduction getDefaultTunable(ReductionMethod_t reduceImpl)
-{
-    tunable_generic_2d_reduction tunable;
-
-    tunable.BlockSize                  = default_workgroup_size;
-    tunable.dim0_thread_cluster_length = 1;
-    tunable.dim0_thread_slice_length   = 1;
-    tunable.dim1_thread_cluster_length = default_workgroup_size;
-
-    if(reduceImpl == ReductionMethod_t::DirectThreadWise)
-        tunable.dim1_thread_slice_length = 8;
-    else
-        tunable.dim1_thread_slice_length = 2;
-    tunable.reordered_thread_clusters = false;
-
-    return (tunable);
-};
-
-template <typename TSrc>
-static tunable_generic_2d_reduction
-getTunableForMultiBlockGenericConfigure(bool need_indices,
-                                        int invariantLength,
-                                        int maxCUs,
-                                        int BlkGroupSize,
-                                        int invariant_dim_length,
-                                        int invariant_dim_stride,
-                                        int reduce_dim_length,
-                                        int reduce_dim_stride)
-{
-    appDataType_t TSrcId = Driver::get_type_enum_from_type<TSrc>();
-
-    // not used at present
-    (void)reduce_dim_length;
-    (void)reduce_dim_stride;
-
-    assert(invariant_dim_stride == 1 || reduce_dim_stride == 1);
-
-    tunable_generic_2d_reduction tunable;
-
-    tunable.BlockSize = default_workgroup_size;
-
-    if(invariant_dim_stride == 1)
-    { // invariant dimension is the fastest
-        tunable.reordered_thread_clusters = true;
-
-        int cluster_length = 64;
-        // get max cluster_length that can divide invariant_dim_length completely
-        while(invariant_dim_length % cluster_length != 0)
-            cluster_length /= 2;
-
-        // try to reduce cluster_length if the total number of blocks is not enough for complete
-        // occupancy on GPU
-        while(invariantLength / cluster_length * BlkGroupSize < maxCUs)
-            cluster_length /= 2;
-
-        int slice_length = 1;
-
-        // check slice_length of 2, 4, 8
-        while(slice_length < 16)
-        {
-            int test_slice_len = slice_length * 2;
-            int test_tile_size = cluster_length * test_slice_len;
-
-            if(invariant_dim_length % test_tile_size == 0 &&
-               (invariantLength / test_tile_size * BlkGroupSize) >= maxCUs)
-                slice_length = test_slice_len;
-            else
-                break;
-        }
-
-        // check slice_length of 11, 7, 5, 3
-        if(slice_length == 1)
-        {
-            static const std::array<int, 4> test_slice_lengths = {11, 7, 5, 3};
-            for(const auto test_slice_len : test_slice_lengths)
-            {
-                int test_tile_size = cluster_length * test_slice_len;
-
-                if(invariant_dim_length % test_tile_size == 0 &&
-                   (invariantLength / test_tile_size * BlkGroupSize) >= maxCUs)
-                {
-                    slice_length = test_slice_len;
-                    break;
-                }
-            }
-        }
-
-        // tune the tile assignment between thread cluster and thread slice
-        while(cluster_length > 8 && slice_length < 4)
-        {
-            cluster_length /= 2;
-            slice_length *= 2;
-        }
-
-        // further tune the thread slice if cluster_length == 2 and slice_length is 11, 7, 5, 3
-        // Some strange compiler issue with the slice_length 11, 7, 5, 3
-        if(cluster_length == 2 && (slice_length > 1 && slice_length % 2 == 1))
-        {
-            cluster_length /= 2;
-            slice_length *= 2;
-        }
-
-        tunable.dim0_thread_cluster_length = cluster_length;
-        tunable.dim0_thread_slice_length   = slice_length;
-        tunable.dim1_thread_cluster_length = default_workgroup_size / cluster_length;
-        tunable.dim1_thread_slice_length =
-            need_indices ? maxVectorSizeForType(TSrcId) : 1; // TODO: more tuning
-    }
-    else
-    { // reduced dimension is the fastest
-        tunable.reordered_thread_clusters  = false;
-        tunable.dim0_thread_cluster_length = 1;
-        tunable.dim0_thread_slice_length   = 1;
-
-        tunable.dim1_thread_cluster_length = default_workgroup_size;
-        tunable.dim1_thread_slice_length   = maxVectorSizeForType(TSrcId); // TODO: more tuning
-    }
-
-    // try to make the dim1_thread_slice_length bigger since for each slice access, a parallel
-    // reduction is needed to keep the indices consistent. So for better performance, bigger slice
-    // length is better
-    if(need_indices)
-    {
-        int reduceSizePerBlock = (invariant_dim_length + BlkGroupSize - 1) / BlkGroupSize;
-
-        int slice_length = tunable.dim1_thread_slice_length;
-
-        while(tunable.BlockSize * slice_length < reduceSizePerBlock)
-        {
-            // need to restrict the total VGPRS used for thread slice
-            if(tunable.dim0_thread_slice_length * slice_length * 2 <= 64)
-                slice_length *= 2;
-            else
-                break;
-        };
-
-        tunable.dim1_thread_slice_length = slice_length;
-    };
-
-    return (tunable);
-};
-
 static std::string get_basic_network_config_string(ReductionMethod_t reduceImpl,
                                                    bool useGlobalAtomicAdd = false)
 {
@@ -294,18 +152,6 @@ static std::string get_definition_string_from_tunable(ReductionMethod_t reduceIm
     return (outs.str());
 };
 
-/*
-static int getBlocksForEnoughUtilization(const online_compile::Handle* handle, int BlockSize)
-{
-    int numCUs           = handle->GetMaxComputeUnits();
-    int numWarpsPerBlock = BlockSize / handle->GetWavefrontWidth();
-
-    // assumes: 1) 4 SIMDs per CU and assume
-    //          2) need 30 active waves for a complete utilization of one SIMD
-    return (numCUs * 4 * 30 / numWarpsPerBlock);
-};
-*/
-
 struct ReductionKernelConfigurator
 {
     ReductionKernelConfigurator() = default;
@@ -316,80 +162,380 @@ struct ReductionKernelConfigurator
         GredDirectThreadWiseUpperReductionLen = warpSize;
         GredDirectWarpWiseUpperReductionLen   = blockSize;
         GredBlockWiseUpperReductionLen        = blockSize * 4;
-        GredUpperNumBlocksPerReduction        = 128;
+        GredUpperNumBlocksPerReduction        = 2; // used by indiced reduction
 
         numWarpsPerBlock = blockSize / warpSize;
+
+        // assume 4 SIMDS per Compute Unit
+        leastBlocksForOccupancy = numMaxCUs * 4 / numWarpsPerBlock;
+
+        occupancyFactor    = 2;
+        maxThreadSliceSize = 64;
     };
 
     int blockSize_;
     int warpSize_;
     int numWarpsPerBlock;
     int numMaxCUs_;
+    // The number of blocks needed to let each SIMD has at least one warp
+    int leastBlocksForOccupancy;
+    // Number of active warps assigned to each SIMD
+    int occupancyFactor;
+    int maxThreadSliceSize;
 
     std::size_t GredDirectThreadWiseUpperReductionLen;
     std::size_t GredDirectWarpWiseUpperReductionLen;
     std::size_t GredBlockWiseUpperReductionLen;
     std::size_t GredUpperNumBlocksPerReduction;
 
-    std::size_t getGridSize(std::size_t invariantLength, std::size_t toReduceLength) const
+    template <typename TSrc>
+    std::tuple<tunable_generic_2d_reduction, int> getDefaultConfig(ReductionMethod_t reduceImpl,
+                                                                   std::size_t invariantLength,
+                                                                   std::size_t toReduceLength)
     {
-        assert(invariantLength > 0 && toReduceLength > 1);
+        appDataType_t TSrcId = Driver::get_type_enum_from_type<TSrc>();
 
-        if(invariantLength == 1)
+        if(reduceImpl == ReductionMethod_t::MultiBlock)
+            throw std::runtime_error("This is interface should only be used with ThreadWise, "
+                                     "WarpWise and MultiBlock reduction method!");
+
+        tunable_generic_2d_reduction tunable;
+
+        tunable.BlockSize                  = this->blockSize_;
+        tunable.dim0_thread_cluster_length = 1;
+        tunable.dim0_thread_slice_length   = 1;
+        tunable.dim1_thread_cluster_length = this->blockSize_;
+
+        tunable.reordered_thread_clusters = false;
+
+        int dim1_slice_len = 1;
+
+        if(reduceImpl == ReductionMethod_t::DirectThreadWise)
         {
-            if(toReduceLength <=
-               GredBlockWiseUpperReductionLen) // let one block to do this only reduction
-                return (1);
-            else
-                return ((toReduceLength + blockSize_ - 1) /
-                        blockSize_); // let multiple blocks to do this only reduction
+            while(true)
+            {
+                int test_slice_len = dim1_slice_len * 2;
+
+                if(test_slice_len <= toReduceLength &&
+                   test_slice_len <= maxVectorSizeForType(TSrcId))
+                    dim1_slice_len = test_slice_len;
+                else
+                    break;
+            };
+        }
+        else if(reduceImpl == ReductionMethod_t::DirectWarpWise)
+        {
+            while(true)
+            {
+                int test_slice_len = dim1_slice_len * 2;
+                int warp_tile_len  = warpSize_ * test_slice_len;
+
+                if(warp_tile_len <= toReduceLength &&
+                   test_slice_len <= maxVectorSizeForType(TSrcId))
+                    dim1_slice_len = test_slice_len;
+                else
+                    break;
+            };
         }
         else
-        {
-            if(toReduceLength <=
-               GredDirectThreadWiseUpperReductionLen) // let one thread to do each reduction
-                return ((invariantLength + blockSize_ - 1) / blockSize_);
-            else if(toReduceLength <=
-                    GredDirectWarpWiseUpperReductionLen) // let one warp to do each reduction
-                return ((invariantLength + numWarpsPerBlock - 1) / numWarpsPerBlock);
-            else if(toReduceLength <=
-                    GredBlockWiseUpperReductionLen) // let one block to do each reduction
-                return (invariantLength);
-            else
+        { //  reduceImpl == ReductionMethod_t::BlockWise
+            while(true)
             {
-                // let multiple blocks to do each reduction
-                std::size_t expBlocksPerReduction =
-                    (toReduceLength + GredBlockWiseUpperReductionLen - 1) /
-                    GredBlockWiseUpperReductionLen;
+                int test_slice_len = dim1_slice_len * 2;
+                int block_tile_len = blockSize_ * test_slice_len;
 
-                if(expBlocksPerReduction > GredUpperNumBlocksPerReduction)
+                if(block_tile_len <= toReduceLength &&
+                   test_slice_len <= maxVectorSizeForType(TSrcId))
+                    dim1_slice_len = test_slice_len;
+                else
+                    break;
+            };
+        }
+
+        tunable.dim1_thread_slice_length = dim1_slice_len;
+
+        int gridSize;
+
+        if(reduceImpl == ReductionMethod_t::DirectThreadWise)
+        {
+            gridSize = (invariantLength + this->blockSize_ - 1) / this->blockSize_;
+        }
+        else if(reduceImpl == ReductionMethod_t::DirectWarpWise)
+        {
+            gridSize = (invariantLength + this->numWarpsPerBlock - 1) / this->numWarpsPerBlock;
+        }
+        else //  reduceImpl == ReductionMethod_t::BlockWise
+            gridSize = invariantLength;
+
+        return std::make_tuple(tunable, gridSize);
+    };
+
+    template <typename TSrc>
+    std::tuple<tunable_generic_2d_reduction, int, int>
+    getConfigForMultiBlock(bool need_indices,
+                           std::size_t invariantLength,
+                           std::size_t toReduceLength,
+                           int invariant_dim_len,
+                           bool invariantDimIsFastest)
+    {
+        appDataType_t TSrcId = Driver::get_type_enum_from_type<TSrc>();
+
+        tunable_generic_2d_reduction tunable;
+
+        tunable.BlockSize = this->blockSize_;
+
+        if(invariantDimIsFastest)
+        { // invariant dimension is the fastest
+            tunable.reordered_thread_clusters = true;
+
+            int dim0_cluster_len = 64;
+            // get max cluster_length that can divide invariant_dim_length completely
+            while(invariant_dim_len % dim0_cluster_len != 0)
+                dim0_cluster_len /= 2;
+
+            int dim0_slice_len     = 1;
+            int leastDim1BlockTile = this->blockSize_ / dim0_cluster_len * 1;
+            int maxBlkGroupSize    = (toReduceLength + leastDim1BlockTile - 1) / leastDim1BlockTile;
+
+            // attempt bigger lengths for dim0_slice_len
+            while(true)
+            {
+                int test_slice_len = dim0_slice_len * 2;
+                int test_tile_size = dim0_cluster_len * test_slice_len;
+
+                if((test_slice_len <= maxVectorSizeForType(TSrcId)) &&
+                   invariant_dim_len % test_tile_size == 0 &&
+                   (invariantLength / test_tile_size * maxBlkGroupSize) >=
+                       this->leastBlocksForOccupancy * this->occupancyFactor)
+                    dim0_slice_len = test_slice_len;
+                else
+                    break;
+            }
+
+            // check slice_length of 11, 7, 5, 3
+            if(dim0_slice_len == 1)
+            {
+                static const std::array<int, 4> test_slice_lengths = {11, 7, 5, 3};
+                for(const auto test_slice_len : test_slice_lengths)
                 {
-                    if(invariantLength >= numMaxCUs_)
-                    {
-                        if(expBlocksPerReduction < 2 * GredUpperNumBlocksPerReduction)
-                            return (invariantLength * expBlocksPerReduction);
-                        else
-                            return (invariantLength * GredUpperNumBlocksPerReduction);
-                    }
-                    else
-                    {
-                        int numBlocksPerReduce = GredUpperNumBlocksPerReduction;
+                    int test_tile_size = dim0_cluster_len * test_slice_len;
 
-                        while(numBlocksPerReduce <= expBlocksPerReduction)
-                        {
-                            // increase the number of blocks per reduction so that we have enough
-                            // blocks to utlize the CUs
-                            if(invariantLength * numBlocksPerReduce >= numMaxCUs_ * 4)
-                                return (invariantLength * numBlocksPerReduce);
-                            numBlocksPerReduce++;
-                        };
-                        return (invariantLength * expBlocksPerReduction);
+                    if(invariant_dim_len % test_tile_size == 0 &&
+                       (invariantLength / test_tile_size * maxBlkGroupSize) >=
+                           this->leastBlocksForOccupancy * this->occupancyFactor)
+                    {
+                        dim0_slice_len = test_slice_len;
+                        break;
                     }
                 }
+            }
+
+            // tune the tile assignment between thread cluster and thread slice
+            while(dim0_cluster_len > 8 && dim0_slice_len < maxVectorSizeForType(TSrcId))
+            {
+                dim0_cluster_len /= 2;
+                dim0_slice_len *= 2;
+            }
+
+            int dim0_tile_size = dim0_cluster_len * dim0_slice_len;
+            int dim1_slice_len = 1;
+            std::size_t gridSize;
+            int blkGroupSize;
+            int iterations = 1;
+
+            // try to get big dim1_slice_len as much as possible
+            if(need_indices)
+            {
+                // For indiced reduction, we try to use bigger dim1_slice_length to reduce the
+                // number of slice access iterations since each iteration requires a reduction to
+                // keep the indices consistent
+                while(true)
+                {
+                    int test_slice_len = dim1_slice_len * 2;
+
+                    int test_blkGroupSize =
+                        (toReduceLength + (this->blockSize_ / dim0_cluster_len * test_slice_len) -
+                         1) /
+                        (this->blockSize_ / dim0_cluster_len * test_slice_len);
+
+                    if(dim0_slice_len * test_slice_len <= this->maxThreadSliceSize &&
+                       test_blkGroupSize > 1 &&
+                       (invariantLength / dim0_tile_size * test_blkGroupSize) >=
+                           this->leastBlocksForOccupancy * this->occupancyFactor)
+                        dim1_slice_len = test_slice_len;
+                    else
+                        break;
+                };
+
+                while(true)
+                {
+                    int test_iterations = iterations + 1;
+
+                    int test_blkGroupSize =
+                        (toReduceLength +
+                         (this->blockSize_ / dim0_cluster_len *
+                          (dim1_slice_len * test_iterations)) -
+                         1) /
+                        (this->blockSize_ / dim0_cluster_len * (dim1_slice_len * test_iterations));
+
+                    if((invariantLength / dim0_tile_size * test_blkGroupSize) <
+                       this->leastBlocksForOccupancy * this->occupancyFactor)
+                        break;
+
+                    if(test_blkGroupSize >= this->GredUpperNumBlocksPerReduction)
+                        iterations = test_iterations;
+                    else
+                        break;
+                };
+
+                blkGroupSize =
+                    (toReduceLength +
+                     (this->blockSize_ / dim0_cluster_len * (dim1_slice_len * iterations)) - 1) /
+                    (this->blockSize_ / dim0_cluster_len * (dim1_slice_len * iterations));
+            }
+            else
+            {
+                // For non-indiced reduction, we try to reduce the size of BlockGroup used by single
+                // reduction
+                while(true)
+                {
+                    int test_iterations = iterations + 1;
+                    int test_blkGroupSize =
+                        (toReduceLength +
+                         (this->blockSize_ / dim0_cluster_len *
+                          (dim1_slice_len * test_iterations)) -
+                         1) /
+                        (this->blockSize_ / dim0_cluster_len * (dim1_slice_len * test_iterations));
+
+                    if(test_blkGroupSize > 1 &&
+                       (invariantLength / dim0_tile_size * test_blkGroupSize) >=
+                           this->leastBlocksForOccupancy * this->occupancyFactor)
+                        iterations = test_iterations;
+                    else
+                        break;
+                };
+
+                blkGroupSize =
+                    (toReduceLength +
+                     (this->blockSize_ / dim0_cluster_len * (dim1_slice_len * iterations)) - 1) /
+                    (this->blockSize_ / dim0_cluster_len * (dim1_slice_len * iterations));
+            }
+
+            gridSize = invariantLength / dim0_tile_size * blkGroupSize;
+
+            tunable.dim0_thread_cluster_length = dim0_cluster_len;
+            tunable.dim0_thread_slice_length   = dim0_slice_len;
+            tunable.dim1_thread_cluster_length = this->blockSize_ / dim0_cluster_len;
+            tunable.dim1_thread_slice_length   = dim1_slice_len;
+
+            return (std::make_tuple(tunable, gridSize, blkGroupSize));
+        }
+        else
+        { // reduced dimension is the fastest
+            tunable.reordered_thread_clusters  = false;
+            tunable.dim0_thread_cluster_length = 1;
+            tunable.dim0_thread_slice_length   = 1;
+
+            tunable.dim1_thread_cluster_length = this->blockSize_;
+
+            int dim1_slice_len = 1;
+
+            // try to get big dim1_slice_len as much as possible
+            while(true)
+            {
+                int test_slice_len = dim1_slice_len * 2;
+
+                int test_blkGroupSize = (toReduceLength + (this->blockSize_ * test_slice_len) - 1) /
+                                        (this->blockSize_ * test_slice_len);
+
+                if(test_slice_len <= 64 && test_blkGroupSize > 1 &&
+                   (invariantLength * test_blkGroupSize) >=
+                       this->leastBlocksForOccupancy * this->occupancyFactor)
+                    dim1_slice_len = test_slice_len;
                 else
-                    return (invariantLength * expBlocksPerReduction);
+                    break;
             };
-        };
+
+            int gridSize;
+            int blkGroupSize;
+            int iterations = 1;
+
+            // try to get big dim1_slice_len as much as possible
+            if(need_indices)
+            {
+                // For indiced reduction, we try to use bigger dim1_slice_length to reduce the
+                // number of slice access iterations since each iteration requires a reduction to
+                // keep the indices consistent
+                while(true)
+                {
+                    int test_slice_len = dim1_slice_len * 2;
+
+                    int test_blkGroupSize =
+                        (toReduceLength + (this->blockSize_ * test_slice_len) - 1) /
+                        (this->blockSize_ * test_slice_len);
+
+                    if(test_slice_len <= this->maxThreadSliceSize && test_blkGroupSize > 1 &&
+                       (invariantLength * test_blkGroupSize) >=
+                           this->leastBlocksForOccupancy * this->occupancyFactor)
+                        dim1_slice_len = test_slice_len;
+                    else
+                        break;
+                };
+
+                while(true)
+                {
+                    int test_iterations = iterations + 1;
+
+                    int test_blkGroupSize =
+                        (toReduceLength + (this->blockSize_ * (dim1_slice_len * test_iterations)) -
+                         1) /
+                        (this->blockSize_ * (dim1_slice_len * test_iterations));
+
+                    if((invariantLength * test_blkGroupSize) <
+                       this->leastBlocksForOccupancy * this->occupancyFactor)
+                        break;
+
+                    if(test_blkGroupSize >= this->GredUpperNumBlocksPerReduction)
+                        iterations = test_iterations;
+                    else
+                        break;
+                };
+
+                blkGroupSize =
+                    (toReduceLength + (this->blockSize_ * (dim1_slice_len * iterations)) - 1) /
+                    (this->blockSize_ * (dim1_slice_len * iterations));
+            }
+            else
+            {
+                // For non-indiced reduction, we try to reduce the size of BlockGroup used by single
+                // reduction
+                while(true)
+                {
+                    int test_iterations = iterations + 1;
+                    int test_blkGroupSize =
+                        (toReduceLength + (this->blockSize_ * (dim1_slice_len * test_iterations)) -
+                         1) /
+                        (this->blockSize_ * (dim1_slice_len * test_iterations));
+
+                    if(test_blkGroupSize > 1 &&
+                       (invariantLength * test_blkGroupSize) >=
+                           this->leastBlocksForOccupancy * this->occupancyFactor)
+                        iterations = test_iterations;
+                    else
+                        break;
+                };
+
+                blkGroupSize =
+                    (toReduceLength + (this->blockSize_ * (dim1_slice_len * iterations)) - 1) /
+                    (this->blockSize_ * (dim1_slice_len * iterations));
+            }
+
+            gridSize = invariantLength * blkGroupSize;
+
+            tunable.dim1_thread_slice_length = dim1_slice_len;
+
+            return (std::make_tuple(tunable, gridSize, blkGroupSize));
+        }
     };
 
     ReductionMethod_t getReductionMethod(std::size_t invariantLength,
@@ -423,33 +569,43 @@ struct ReductionKernelConfigurator
         };
     };
 
-    std::size_t getWorkspaceSize(std::size_t invariantLength, std::size_t toReduceLength) const
+    std::size_t getWorkspaceSize(bool useGlobalAtomicAdd,
+                                 ReductionMethod_t reduceImpl,
+                                 size_t invariantLength,
+                                 int blkGroupSize) const
     {
-        assert(invariantLength > 0 && toReduceLength > 1);
-
-        if(getReductionMethod(invariantLength, toReduceLength) == ReductionMethod_t::MultiBlock)
-        {
-            auto gridSize = getGridSize(invariantLength, toReduceLength);
-
-            return (gridSize);
-        };
-
+        if(reduceImpl == ReductionMethod_t::MultiBlock && !useGlobalAtomicAdd)
+            return (invariantLength * blkGroupSize);
         return (0);
     };
 
-    std::size_t getGridSize_2(std::size_t invariantLength, std::size_t toReduceLength) const
+    std::size_t getGridSize_2(ReductionMethod_t reduceImpl,
+                              std::size_t invariantLength,
+                              std::size_t toReduceLength) const
     {
-        if(toReduceLength <= warpSize_ / 4) // let one thread to do each reduction
+        (void)toReduceLength;
+
+        if(reduceImpl == ReductionMethod_t::DirectThreadWise)
+        {
             return ((invariantLength + blockSize_ - 1) / blockSize_);
-        else if(toReduceLength <= blockSize_) // let one warp to do each reduction
+        }
+        else if(reduceImpl == ReductionMethod_t::DirectWarpWise)
+        {
             return ((invariantLength + numWarpsPerBlock - 1) / numWarpsPerBlock);
+        }
+        else if(reduceImpl == ReductionMethod_t::BlockWise)
+        {
+            return (invariantLength);
+        }
         else
-            return (invariantLength); // let one block to do each reduction
+            throw std::runtime_error("Invalid reduction method used!");
     };
 
-    ReductionMethod_t GetReductionMethod_2(std::size_t invariantLength,
+    ReductionMethod_t getReductionMethod_2(std::size_t invariantLength,
                                            std::size_t toReduceLength) const
     {
+        (void)invariantLength;
+
         if(toReduceLength <= warpSize_ / 4) // let one thread to do each reduction
             return (ReductionMethod_t::DirectThreadWise);
         else if(toReduceLength <= blockSize_) // let one warp to do each reduction
@@ -777,13 +933,42 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     int InvariantDimVectorSize = get_dim_max_vector_size<TSrc>(
         p_inLengths[mergedInvariantDims - 1], p_inStrides[mergedInvariantDims - 1]);
 
-    bool InvariantDimIsFastest = p_inStrides[mergedInvariantDims - 1] == 1 ? true : false;
+    // either the invariant lowest dimension or the toReduce lowest dimension is the fastest one
+    // among all dimensions
+    assert(p_inStrides[mergedInvariantDims + mergedToReduceDims - 1] == 1 ||
+           p_inStrides[mergedInvariantDims - 1] == 1);
 
-    auto workspace_size = configurator.getWorkspaceSize(invariantLength, toReduceLength);
+    bool InvariantDimIsFastest = p_inStrides[mergedInvariantDims - 1] == 1 ? true : false;
 
     bool need_indices = (reduceIndicesOpt == REDUCE_TENSOR_FLATTENED_INDICES) &&
                         (reduceOp == REDUCE_TENSOR_MIN || reduceOp == REDUCE_TENSOR_MAX ||
                          reduceOp == REDUCE_TENSOR_AMAX);
+
+    ReductionMethod_t reduceImpl = configurator.getReductionMethod(invariantLength, toReduceLength);
+    int GridSize;
+    int BlkGroupSize = 0;
+    tunable_generic_2d_reduction tunable;
+
+    if(reduceImpl == ReductionMethod_t::MultiBlock)
+    {
+        std::tie(tunable, GridSize, BlkGroupSize) =
+            configurator.getConfigForMultiBlock<TSrc>(need_indices,
+                                                      invariantLength,
+                                                      toReduceLength,
+                                                      p_inLengths[mergedInvariantDims - 1],
+                                                      InvariantDimIsFastest);
+    }
+    else
+    {
+        std::tie(tunable, GridSize) =
+            configurator.getDefaultConfig<TSrc>(reduceImpl, invariantLength, toReduceLength);
+    }
+
+    const bool useGlobalAtomicAdd =
+        useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);
+
+    auto workspace_size = configurator.getWorkspaceSize(
+        useGlobalAtomicAdd, reduceImpl, invariantLength, BlkGroupSize);
 
     size_t wsSizeInBytes = !need_indices
                                ? workspace_size * sizeof(TSrc)
@@ -805,45 +990,12 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         ws_buf2_bytes_offset = ((byteOffset + 63) / 64) * 64;
     };
 
-    ReductionMethod_t reduceImpl = configurator.getReductionMethod(invariantLength, toReduceLength);
-    int GridSize = static_cast<int>(configurator.getGridSize(invariantLength, toReduceLength));
-    int BlkGroupSize =
-        (reduceImpl == ReductionMethod_t::MultiBlock) ? GridSize / invariantLength : 0;
-
-    const bool useGlobalAtomicAdd =
-        useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);
-
-    auto tunable = getDefaultTunable(reduceImpl);
-
-    // For MultiBlock path, we use specific tunable values
-    if(reduceImpl == ReductionMethod_t::MultiBlock &&
-       (invariantLength * BlkGroupSize >= 2 * handle->GetMaxComputeUnits()))
-        tunable = getTunableForMultiBlockGenericConfigure<TSrc>(
-            need_indices,
-            invariantLength,
-            handle->GetMaxComputeUnits(),
-            BlkGroupSize,
-            p_inLengths[mergedInvariantDims - 1],
-            p_inStrides[mergedInvariantDims - 1],
-            p_inLengths[mergedInvariantDims + mergedToReduceDims - 1],
-            p_inStrides[mergedInvariantDims + mergedToReduceDims - 1]);
-
     const std::vector<size_t> vld    = {static_cast<size_t>(tunable.BlockSize), 1, 1};
     const std::vector<size_t> vgd1   = {static_cast<size_t>(tunable.BlockSize), 1, 1};
     const std::vector<size_t> vgd1_s = {
         (invariantLength + tunable.BlockSize - 1) / tunable.BlockSize * tunable.BlockSize, 1, 1};
 
-    size_t realGridSize;
-
-    if(reduceImpl == ReductionMethod_t::MultiBlock)
-        realGridSize =
-            GridSize / (tunable.dim0_thread_cluster_length * tunable.dim0_thread_slice_length);
-    else
-        realGridSize = GridSize;
-
-    std::cout << "realGridSize=" << realGridSize << " BlkGroupSize=" << BlkGroupSize << std::endl;
-
-    const std::vector<size_t> vgd2 = {realGridSize * tunable.BlockSize, 1, 1};
+    const std::vector<size_t> vgd2 = {(size_t)GridSize * tunable.BlockSize, 1, 1};
 
     std::string algo_name = "dynamic_generic_reduction";
 
@@ -1020,12 +1172,16 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
         if(reduceImpl == ReductionMethod_t::MultiBlock && !useGlobalAtomicAdd)
         {
             auto toReduceLength_2 = BlkGroupSize;
-            int GridSize_2 =
-                static_cast<int>(configurator.getGridSize_2(invariantLength, toReduceLength_2));
+            auto reduceImpl2 = configurator.getReductionMethod_2(invariantLength, toReduceLength_2);
+            tunable_generic_2d_reduction tunable2;
+            int GridSize_2;
+
+            std::tie(tunable2, GridSize_2) =
+                configurator.getDefaultConfig<TSrc>(reduceImpl2, invariantLength, toReduceLength_2);
+
             const std::vector<size_t> vgd2_2 = {
-                static_cast<size_t>(GridSize_2) * tunable.BlockSize, size_t{1}, size_t{1}};
-            auto reduceImpl2 = configurator.GetReductionMethod_2(invariantLength, toReduceLength_2);
-            auto tunable2    = getDefaultTunable(reduceImpl2);
+                (size_t)GridSize_2 * tunable.BlockSize, size_t{1}, size_t{1}};
+
             auto use_padding2 = get_padding_need(reduceImpl2,
                                                  invariantLength,
                                                  toReduceLength_2,
