@@ -60,7 +60,7 @@ set(OLC_hip_VERSION_MAJOR "${hip_VERSION_MAJOR}")
 set(OLC_hip_VERSION_MINOR "${hip_VERSION_MINOR}")
 set(OLC_hip_VERSION_PATCH "${hip_VERSION_PATCH}")
 
-option(ENABLE_DEBUG "Build to enable debugging" ON)
+option(ENABLE_DEBUG "Build to enable debugging" OFF)
 if(ENABLE_DEBUG)
     set(OLC_DEBUG 1)
 else()
