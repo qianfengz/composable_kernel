@@ -84,13 +84,12 @@ __device__ void inner_product<half2_t, half2_t, float>(const half2_t& a, const h
     c = __builtin_amdgcn_sdot2(a, b, c, false);
 #endif
 #else
-    const auto convert = type_convert<int32_t>{};
-
     const vector_type<half_t, 2> a_vector{a};
     const vector_type<half_t, 2> b_vector{b};
 
     static_for<0, 2, 1>{}([&](auto i) {
-        c += convert(a_vector.AsType<half_t>()[i]) * convert(b_vector.AsType<half_t>()[i]);
+        c += type_convert<int32_t>(a_vector.AsType<half_t>()[i]) *
+             type_convert<int32_t>(b_vector.AsType<half_t>()[i]);
     });
 #endif
 }
@@ -145,18 +144,17 @@ inner_product<int8x4_t, int8x4_t, int32_t>(const int8x4_t& a, const int8x4_t& b,
             v_dot4_i32_i8 %0, %1, %2, %0\n \
             "
                  : "=v"(c)
-                 : "v"(as_type<int32_t>(a)), "v"(as_type<int32_t>(b)), "0"(c));
+                 : "v"(bit_cast<int32_t>(a)), "v"(bit_cast<int32_t>(b)), "0"(c));
 #else
-    c = __builtin_amdgcn_sdot4(as_type<int32_t>(a), as_type<int32_t>(b), c, false);
+    c = __builtin_amdgcn_sdot4(bit_cast<int32_t>(a), bit_cast<int32_t>(b), c, false);
 #endif
 #else
-    const auto convert = type_convert<int32_t>{};
-
     const vector_type<int8_t, 4> a_vector{a};
     const vector_type<int8_t, 4> b_vector{b};
 
     static_for<0, 4, 1>{}([&](auto i) {
-        c += convert(a_vector.AsType<int8_t>()[i]) * convert(b_vector.AsType<int8_t>()[i]);
+        c += type_convert<int32_t>(a_vector.AsType<int8_t>()[i]) *
+             type_convert<int32_t>(b_vector.AsType<int8_t>()[i]);
     });
 #endif
 }

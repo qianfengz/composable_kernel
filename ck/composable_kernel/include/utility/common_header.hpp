@@ -30,9 +30,13 @@
 #include "amd_address_space.hpp"
 #include "amd_buffer_addressing.hpp"
 #include "static_buffer.hpp"
+// TODO remove this
+#include "static_buffer_of_vector_type_v2.hpp"
 #include "dynamic_buffer.hpp"
-
+#include "is_known_at_compile_time.hpp"
+#include "transpose_vectors.hpp"
 #include "inner_product.hpp"
+#include "element_wise_operation.hpp"
 
 // TODO: remove this
 #if CK_USE_AMD_INLINE_ASM

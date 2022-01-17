@@ -31,9 +31,8 @@
 typedef enum
 {
     DirectThreadWise = 1,
-    DirectWarpWise   = 2,
-    BlockWise        = 3,
-    MultiBlock       = 4
+    BlockWise        = 2,
+    MultiBlock       = 3,
 } ReductionMethod_t;
 
 typedef enum
@@ -123,25 +122,22 @@ struct get_type_from_type_enum<appInt32>
 };
 
 template <typename T>
-static inline appDataType_t get_type_enum_from_type()
-{
-    throw std::runtime_error("Unsupported typeid conversion for this type!");
-};
+static constexpr inline appDataType_t get_type_enum_from_type();
 
 template <>
-inline appDataType_t get_type_enum_from_type<float>()
+constexpr inline appDataType_t get_type_enum_from_type<float>()
 {
     return (appFloat);
 };
 
 template <>
-inline appDataType_t get_type_enum_from_type<half_float::half>()
+constexpr inline appDataType_t get_type_enum_from_type<half_float::half>()
 {
     return (appHalf);
 };
 
 template <>
-inline appDataType_t get_type_enum_from_type<double>()
+constexpr inline appDataType_t get_type_enum_from_type<double>()
 {
     return (appDouble);
 };

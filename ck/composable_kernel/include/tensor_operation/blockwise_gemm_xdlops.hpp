@@ -37,7 +37,10 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
     static constexpr index_t MWaves = MPerBlock / (MRepeat * MPerXDL);
     static constexpr index_t NWaves = NPerBlock / (NRepeat * NPerXDL);
 
-    StaticBufferV2<AddressSpaceEnum_t::Vgpr, vector_type<FloatAcc, 16>, MRepeat * NRepeat, true>
+    StaticBufferOfVectorTypeV2<AddressSpaceEnum_t::Vgpr,
+                               vector_type<FloatAcc, xdlops_gemm.GetRegSizePerXdlops()>,
+                               MRepeat * NRepeat,
+                               true>
         c_thread_buf_;
 
     __host__ __device__ constexpr auto& GetCThreadBuffer() { return c_thread_buf_; }
@@ -124,7 +127,7 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
                       "wrong!");
     }
 
-    __host__ __device__ static constexpr auto GetCM0N0M1N1M2M3M4N2ThreadDescriptor()
+    __host__ __device__ static constexpr auto GetCThreadDescriptor_M0_N0_M1_N1_M2_M3_M4_N2()
     {
         constexpr auto c_m0_m1_m2_n_tblk_lens = xdlops_gemm.GetCM0M1M2NThreadBlkLengths();
 
@@ -133,12 +136,13 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
         constexpr auto M2 = c_m0_m1_m2_n_tblk_lens[I2];
         constexpr auto N  = c_m0_m1_m2_n_tblk_lens[I3];
 
-        return make_naive_tensor_descriptor_packed(make_tuple(I1, I1, I1, I1, M0, M1, M2, N));
+        return make_naive_tensor_descriptor_packed(
+            make_tuple(Number<MRepeat>{}, Number<NRepeat>{}, I1, I1, M0, M1, M2, N));
     }
 
-    __host__ __device__ static constexpr auto GetCM0N0M1N1M2M3M4N2BlockDescriptor()
+    __host__ __device__ static constexpr auto GetCBlockDescriptor_M0_N0_M1_N1_M2_M3_M4_N2()
     {
-        constexpr auto c_m0_n0_m1_n1_m2_n2_block_desc =
+        constexpr auto c_block_desc_m0_n0_m1_n1_m2_n2 =
             make_naive_tensor_descriptor_packed(make_tuple(Number<MRepeat>{},
                                                            Number<NRepeat>{},
                                                            Number<MWaves>{},
@@ -146,24 +150,27 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
                                                            Number<MPerXDL>{},
                                                            Number<NPerXDL>{}));
 
-        return xdlops_gemm.MakeCM0N0M1N1M2M3M4N2Descriptor(c_m0_n0_m1_n1_m2_n2_block_desc);
+        return xdlops_gemm.MakeCDescriptor_M0_N0_M1_N1_M2_M3_M4_N2(c_block_desc_m0_n0_m1_n1_m2_n2);
     }
 
-    template <typename CMNGridDesc>
+    template <typename CGridDesc_M_N>
     __host__ __device__ static constexpr auto
-    MakeCM0N0M1N1M2M3M4N2GridDescriptor(const CMNGridDesc& c_m_n_grid_desc)
+    MakeCGridDescriptor_M0_N0_M1_N1_M2_M3_M4_N2(const CGridDesc_M_N& c_grid_desc_m_n)
     {
-        const auto c_m0_n0_m1_n1_m2_n2_grid_desc = transform_tensor_descriptor(
-            c_m_n_grid_desc,
-            make_tuple(make_unmerge_transform(make_tuple(MRepeat, MWaves, MPerXDL)),
-                       make_unmerge_transform(make_tuple(NRepeat, NWaves, NPerXDL))),
+        const auto M = c_grid_desc_m_n.GetLength(I0);
+        const auto N = c_grid_desc_m_n.GetLength(I1);
+
+        const auto c_grid_desc_m0_n0_m1_n1_m2_n2 = transform_tensor_descriptor(
+            c_grid_desc_m_n,
+            make_tuple(make_unmerge_transform(make_tuple(M / (MWaves * MPerXDL), MWaves, MPerXDL)),
+                       make_unmerge_transform(make_tuple(N / (NWaves * NPerXDL), NWaves, NPerXDL))),
             make_tuple(Sequence<0>{}, Sequence<1>{}),
             make_tuple(Sequence<0, 2, 4>{}, Sequence<1, 3, 5>{}));
 
-        return xdlops_gemm.MakeCM0N0M1N1M2M3M4N2Descriptor(c_m0_n0_m1_n1_m2_n2_grid_desc);
+        return xdlops_gemm.MakeCDescriptor_M0_N0_M1_N1_M2_M3_M4_N2(c_grid_desc_m0_n0_m1_n1_m2_n2);
     }
 
-    __host__ __device__ static constexpr auto MakeAK0M0M1M2K1BlockDescriptor()
+    __host__ __device__ static constexpr auto MakeABlockDescriptor_K0_M0_M1_M2_K1()
     {
         return transform_tensor_descriptor(
             AK0MK1BlockDesc{},
@@ -175,7 +182,7 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
             make_tuple(Sequence<0>{}, Sequence<1, 2, 3>{}, Sequence<4>{}));
     }
 
-    __host__ __device__ static constexpr auto MakeBK0N0N1N2K1BlockDescriptor()
+    __host__ __device__ static constexpr auto MakeBBlockDescriptor_K0_N0_N1_N2_K1()
     {
         return transform_tensor_descriptor(
             BK0NK1BlockDesc{},
@@ -187,8 +194,8 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
             make_tuple(Sequence<0>{}, Sequence<1, 2, 3>{}, Sequence<4>{}));
     }
 
-    static constexpr auto a_k0_m0_m1_m2_k1_block_desc = MakeAK0M0M1M2K1BlockDescriptor();
-    static constexpr auto b_k0_n0_n1_n2_k1_block_desc = MakeBK0N0N1N2K1BlockDescriptor();
+    static constexpr auto a_block_desc_k0_m0_m1_m2_k1 = MakeABlockDescriptor_K0_M0_M1_M2_K1();
+    static constexpr auto b_block_desc_k0_n0_n1_n2_k1 = MakeBBlockDescriptor_K0_N0_N1_N2_K1();
 
     template <typename ABlockBuffer, typename BBlockBuffer, typename CThreadBuffer>
     __device__ void Run(const ABlockBuffer& a_block_buf,
@@ -202,7 +209,7 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
 
         static_for<0, MRepeat, 1>{}([&](auto m0) {
             // read A
-            a_thread_copy_.Run(a_k0_m0_m1_m2_k1_block_desc,
+            a_thread_copy_.Run(a_block_desc_k0_m0_m1_m2_k1,
                                make_tuple(I0, m0, I0, I0, I0),
                                a_block_buf,
                                a_thread_desc_,
@@ -211,7 +218,7 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
 
             static_for<0, NRepeat, 1>{}([&](auto n0) {
                 // read B
-                b_thread_copy_.Run(b_k0_n0_n1_n2_k1_block_desc,
+                b_thread_copy_.Run(b_block_desc_k0_n0_n1_n2_k1,
                                    make_tuple(I0, n0, I0, I0, I0),
                                    b_block_buf,
                                    b_thread_desc_,
@@ -243,20 +250,21 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
     }
 
     private:
-    // A[K, M]
+    // A[K0, M0, M1, M2, K1]
     static constexpr auto a_thread_desc_ =
         make_naive_tensor_descriptor_packed(make_tuple(Number<K0>{}, I1, I1, I1, Number<K1>{}));
 
-    // B[K, N]
+    // B[K0, N0, N1, N2, K1]
     static constexpr auto b_thread_desc_ =
         make_naive_tensor_descriptor_packed(make_tuple(Number<K0>{}, I1, I1, I1, Number<K1>{}));
 
+    // C[M, N]
     static constexpr auto c_thread_desc_ =
         make_naive_tensor_descriptor_packed(make_tuple(Number<MRepeat>{}, Number<NRepeat>{}));
 
     using AThreadCopy = ThreadwiseTensorSliceTransfer_v4<FloatAB,
                                                          FloatAB,
-                                                         decltype(a_k0_m0_m1_m2_k1_block_desc),
+                                                         decltype(a_block_desc_k0_m0_m1_m2_k1),
                                                          decltype(a_thread_desc_),
                                                          Sequence<K0, 1, 1, 1, K1>,
                                                          Sequence<0, 1, 2, 3, 4>,
@@ -266,7 +274,7 @@ struct BlockwiseGemmXdlops_k0mk1_k0nk1_m0n0m1n1m2m3m4n2_v1
 
     using BThreadCopy = ThreadwiseTensorSliceTransfer_v4<FloatAB,
                                                          FloatAB,
-                                                         decltype(b_k0_n0_n1_n2_k1_block_desc),
+                                                         decltype(b_block_desc_k0_n0_n1_n2_k1),
                                                          decltype(b_thread_desc_),
                                                          Sequence<K0, 1, 1, 1, K1>,
                                                          Sequence<0, 1, 2, 3, 4>,

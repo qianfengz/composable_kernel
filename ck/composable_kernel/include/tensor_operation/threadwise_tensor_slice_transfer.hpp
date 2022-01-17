@@ -50,6 +50,7 @@ template <typename SrcData,
           typename DstData,
           typename SrcDesc,
           typename DstDesc,
+          typename DstElementwiseOperation,
           typename SliceLengths,
           typename DimAccessOrder,
           index_t DstVectorDim,
@@ -68,9 +69,12 @@ struct ThreadwiseTensorSliceTransfer_v1r3
 
     using DstCoordStep = decltype(make_tensor_coordinate_step(DstDesc{}, Index{}));
 
-    __device__ constexpr ThreadwiseTensorSliceTransfer_v1r3(const DstDesc& dst_desc,
-                                                            const Index& dst_slice_origin_idx)
-        : dst_coord_(make_tensor_coordinate(dst_desc, dst_slice_origin_idx))
+    __device__ constexpr ThreadwiseTensorSliceTransfer_v1r3(
+        const DstDesc& dst_desc,
+        const Index& dst_slice_origin_idx,
+        const DstElementwiseOperation& dst_element_op)
+        : dst_coord_(make_tensor_coordinate(dst_desc, dst_slice_origin_idx)),
+          dst_element_op_{dst_element_op}
     {
         static_assert(SrcDesc::IsKnownAtCompileTime(),
                       "wrong! SrcDesc need to known at compile-time");
@@ -161,7 +165,7 @@ struct ThreadwiseTensorSliceTransfer_v1r3
                 static_for<1, nDim, 1>{}([&](auto i) {
                     index_t tmp = ordered_access_idx[I0];
 
-                    static_for<0, i, 1>{}([&](auto j) {
+                    static_for<1, i, 1>{}([&](auto j) {
                         tmp = tmp * ordered_access_lengths[j] + ordered_access_idx[j];
                     });
 
@@ -195,8 +199,9 @@ struct ThreadwiseTensorSliceTransfer_v1r3
                 constexpr index_t src_offset = src_desc.CalculateOffset(
                     src_slice_origin_idx + dst_data_idx + i * dst_scalar_step_in_vector);
 
+                // apply element-wise operation and type convert
                 dst_vector.template AsType<DstData>()(i) =
-                    type_convert<DstData>{}(src_buf[Number<src_offset>{}]);
+                    type_convert<DstData>(dst_element_op_(src_buf[Number<src_offset>{}]));
             });
 
             const bool is_dst_valid =
@@ -213,6 +218,22 @@ struct ThreadwiseTensorSliceTransfer_v1r3
             else if constexpr(DstInMemOp == InMemoryDataOperationEnum_t::AtomicAdd)
             {
                 dst_buf.template AtomicAdd<dst_vector_t>(
+                    dst_coord_.GetOffset(),
+                    is_dst_valid,
+                    dst_vector.template AsType<dst_vector_t>()[Number<0>{}]);
+            }
+            else if constexpr(DstInMemOp == InMemoryDataOperationEnum_t::Add)
+            {
+
+                typename vector_type_maker<DstData, DstScalarPerVector>::type tmp;
+                tmp.template AsType<dst_vector_t>()(Number<0>{}) =
+                    dst_buf.template Get<dst_vector_t>(dst_coord_.GetOffset(), is_dst_valid);
+
+                static_for<0, DstScalarPerVector, 1>{}([&](auto t) {
+                    dst_vector.template AsType<DstData>()(t) += tmp.template AsType<DstData>()[t];
+                });
+
+                dst_buf.template Set<dst_vector_t>(
                     dst_coord_.GetOffset(),
                     is_dst_valid,
                     dst_vector.template AsType<dst_vector_t>()[Number<0>{}]);
@@ -269,7 +290,7 @@ struct ThreadwiseTensorSliceTransfer_v1r3
                         const DstDesc& dst_desc,
                         DstBuffer& dst_buf)
     {
-        constexpr index_t ntransform_dst = DstDesc::GetNumOfTransform();
+        constexpr index_t ntransform_dst = remove_cvref_t<DstDesc>::GetNumOfTransform();
 
         constexpr auto zeros = typename uniform_sequence_gen<ntransform_dst, 0>::type{};
 
@@ -305,7 +326,7 @@ struct ThreadwiseTensorSliceTransfer_v1r3
             static_for<1, nDim, 1>{}([&](auto i) {
                 index_t tmp = ordered_access_lengths[I0] - 1;
 
-                static_for<0, i, 1>{}([&](auto j) {
+                static_for<1, i, 1>{}([&](auto j) {
                     tmp = tmp * ordered_access_lengths[j] + ordered_access_lengths[j] - 1;
                 });
 
@@ -357,6 +378,7 @@ struct ThreadwiseTensorSliceTransfer_v1r3
 
     private:
     DstCoord dst_coord_;
+    const DstElementwiseOperation dst_element_op_;
 }; // namespace ck
 
 // Assume:
@@ -484,7 +506,7 @@ struct ThreadwiseTensorSliceTransfer_v2
                 static_for<1, nDim, 1>{}([&](auto i) {
                     index_t tmp = ordered_access_idx[I0];
 
-                    static_for<0, i, 1>{}([&](auto j) {
+                    static_for<1, i, 1>{}([&](auto j) {
                         tmp = tmp * ordered_access_lengths[j] + ordered_access_idx[j];
                     });
 
@@ -616,7 +638,7 @@ struct ThreadwiseTensorSliceTransfer_v2
             static_for<1, nDim, 1>{}([&](auto i) {
                 index_t tmp = ordered_access_lengths[I0] - 1;
 
-                static_for<0, i, 1>{}([&](auto j) {
+                static_for<1, i, 1>{}([&](auto j) {
                     tmp = tmp * ordered_access_lengths[j] + ordered_access_lengths[j] - 1;
                 });
 
@@ -662,6 +684,25 @@ struct ThreadwiseTensorSliceTransfer_v2
 
         // is it OK to construct a new step every time?
         const auto adjusted_step = make_tensor_coordinate_step(src_desc, adjusted_step_idx);
+
+        move_tensor_coordinate(src_desc, src_coord_, adjusted_step);
+    }
+
+    // src_slice_origin_step_idx need to be known at compile-time, for performance reason
+    template <typename SrcMoveSliceWindowStepHack>
+    __device__ void
+    MoveSrcSliceWindow(const SrcDesc& src_desc,
+                       const Index& src_slice_origin_step_idx,
+                       const SrcMoveSliceWindowStepHack& src_move_slice_window_step_hack)
+    {
+        // if src coord was not reset by RunRead(), then need to adjust the step here
+        const auto adjusted_step_idx =
+            SrcResetCoordinateAfterRun ? src_slice_origin_step_idx
+                                       : src_slice_origin_step_idx + GetSrcCoordinateResetStep();
+
+        // is it OK to construct a new step every time?
+        const auto adjusted_step = make_tensor_coordinate_step(
+            src_desc, adjusted_step_idx, src_move_slice_window_step_hack);
 
         move_tensor_coordinate(src_desc, src_coord_, adjusted_step);
     }
@@ -794,7 +835,7 @@ struct ThreadwiseTensorSliceTransfer_v3
                 static_for<1, nDim, 1>{}([&](auto i) {
                     index_t tmp = ordered_src_access_idx[I0];
 
-                    static_for<0, i, 1>{}([&](auto j) {
+                    static_for<1, i, 1>{}([&](auto j) {
                         tmp = tmp * ordered_src_access_lengths[j] + ordered_src_access_idx[j];
                     });
 
@@ -951,7 +992,7 @@ struct ThreadwiseTensorSliceTransfer_v3
                 static_for<1, nDim, 1>{}([&](auto i) {
                     index_t tmp = ordered_dst_access_idx[I0];
 
-                    static_for<0, i, 1>{}([&](auto j) {
+                    static_for<1, i, 1>{}([&](auto j) {
                         tmp = tmp * ordered_dst_access_lengths[j] + ordered_dst_access_idx[j];
                     });
 
@@ -983,7 +1024,7 @@ struct ThreadwiseTensorSliceTransfer_v3
                     buffer_desc_.CalculateOffset(dst_data_idx + i * dst_scalar_step_in_vector);
 
                 dst_tmp_vector.template AsType<DstData>()(i) =
-                    type_convert<DstData>{}(buffer_[Number<buffer_offset>{}]);
+                    type_convert<DstData>(buffer_[Number<buffer_offset>{}]);
             });
 
             using dst_vector_t = typename decltype(dst_tmp_vector)::type;
@@ -1095,7 +1136,7 @@ struct ThreadwiseTensorSliceTransfer_v3
             static_for<1, nDim, 1>{}([&](auto i) {
                 index_t tmp = ordered_src_access_lengths[I0] - 1;
 
-                static_for<0, i, 1>{}([&](auto j) {
+                static_for<1, i, 1>{}([&](auto j) {
                     tmp = tmp * ordered_src_access_lengths[j] + ordered_src_access_lengths[j] - 1;
                 });
 
@@ -1155,7 +1196,7 @@ struct ThreadwiseTensorSliceTransfer_v3
             static_for<1, nDim, 1>{}([&](auto i) {
                 index_t tmp = ordered_dst_access_lengths[I0] - 1;
 
-                static_for<0, i, 1>{}([&](auto j) {
+                static_for<1, i, 1>{}([&](auto j) {
                     tmp = tmp * ordered_dst_access_lengths[j] + ordered_dst_access_lengths[j] - 1;
                 });
 
@@ -1403,7 +1444,7 @@ struct ThreadwiseTensorSliceTransfer_v4
             // TODO: if SrcData and DstData are vetor type, then static_cast may not compile
             static_for<0, SrcScalarPerVector, 1>{}([&](auto i) {
                 dst_tmp_vector.template AsType<DstData>()(i) =
-                    type_convert<DstData>{}(src_tmp_vector.template AsType<SrcData>()[i]);
+                    type_convert<DstData>(src_tmp_vector.template AsType<SrcData>()[i]);
             });
 
             // copy data from dst_tmp_vector into dst_buf

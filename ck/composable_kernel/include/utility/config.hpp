@@ -5,7 +5,6 @@
 #include "hip/hip_runtime.h"
 #include "hip/hip_fp16.h"
 #endif
-#include "bfloat16_dev.hpp"
 
 // "Constant" address space for kernel parameter
 #define CONSTANT __attribute__((address_space(4)))
@@ -25,12 +24,16 @@
 #define CK_MIN_BLOCK_PER_CU 2
 #endif
 
-// buffer resourse
+// GPU-specific parameters
 #if defined(CK_AMD_GPU_GFX803) || defined(CK_AMD_GPU_GFX900) || defined(CK_AMD_GPU_GFX906) || \
     defined(CK_AMD_GPU_GFX908) || defined(CK_AMD_GPU_GFX90A)
+// buffer resourse
 #define CK_BUFFER_RESOURCE_3RD_DWORD 0x00020000
+// wave size
+#define CK_GPU_WAVE_SIZE 64
 #elif defined(CK_AMD_GPU_GFX1030)
 #define CK_BUFFER_RESOURCE_3RD_DWORD 0x31014000
+#define CK_GPU_WAVE_SIZE 32
 #endif
 
 // FMA instruction
@@ -76,7 +79,7 @@
 #define CK_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM 1
 #endif
 
-// experimental implementation
+// experimental implementation for buffer load/store/atomic
 #ifndef CK_EXPERIMENTAL_USE_BUFFER_LOAD_OOB_CHECK_OFFSET_TRICK
 #define CK_EXPERIMENTAL_USE_BUFFER_LOAD_OOB_CHECK_OFFSET_TRICK 0
 #endif
@@ -89,12 +92,30 @@
 #define CK_EXPERIMENTAL_USE_BUFFER_ATOMIC_ADD_OOB_CHECK_OFFSET_TRICK 1
 #endif
 
+// experimental implementation for in-regsiter sub-dword transpose
+#ifndef CK_EXPERIMENTAL_USE_IN_REGISTER_SUB_DWORD_TRANSPOSE
+#define CK_EXPERIMENTAL_USE_IN_REGISTER_SUB_DWORD_TRANSPOSE 1
+#endif
+
 // pass tensor descriptor by value or void*
 #define CK_EXPERIMENTAL_PASS_TENSOR_DESCRIPTOR_BY_VALUE 1
 #define CK_EXPERIMENTAL_PASS_TENSOR_DESCRIPTOR_BY_VOID_POINTER 0
+#define CK_EXPERIMENTAL_STATIC_TENSOR_DESCRIPTOR 0
 
 // merge transformation use magic number division
-#define CK_EXPERIMENTAL_MERGE_USE_MAGIC_DIVISION 0
+#ifndef CK_EXPERIMENTAL_MERGE_USE_MAGIC_DIVISION
+#define CK_EXPERIMENTAL_MERGE_USE_MAGIC_DIVISION 1
+#endif
+
+// use __builtin_memcpy instead of pointer cast to access a vector from pointer of scalar
+#ifndef CK_EXPERIMENTAL_USE_MEMCPY_FOR_VECTOR_ACCESS
+#define CK_EXPERIMENTAL_USE_MEMCPY_FOR_VECTOR_ACCESS 0
+#endif
+
+// use __builtin_memcpy instead of union to do bit_cast
+#ifndef CK_EXPERIMENTAL_USE_MEMCPY_FOR_BIT_CAST
+#define CK_EXPERIMENTAL_USE_MEMCPY_FOR_BIT_CAST 1
+#endif
 
 // hack: have underlying assumption that need to be satsified, otherwise it's a bug
 // hack for forcing register to keep idx_diff_low_const in SGPR. idx_diff_low_const must be
@@ -114,9 +135,18 @@
 #define CK_WORKAROUND_SWDEV_XXXXXX_INT8_BUFFER_LOAD_STORE_ISSUE 1
 #endif
 
-// workaround for compiler crash when using buffer load/store for i8
+// workaround for compiler gnerating inefficient ds_write instructions
 #ifndef CK_WORKAROUND_SWDEV_XXXXXX_INT8_DS_WRITE_ISSUE
 #define CK_WORKAROUND_SWDEV_XXXXXX_INT8_DS_WRITE_ISSUE 1
+#endif
+
+// workaround for register spill due to compiler issue, when casting type between fp32 and fp16
+#ifndef CK_WORKAROUND_SWDEV_XXXXXX_THREAD_WISE_COPY_V1R4_TYPE_CONVERT_ISSUE
+#define CK_WORKAROUND_SWDEV_XXXXXX_THREAD_WISE_COPY_V1R4_TYPE_CONVERT_ISSUE 1
+#endif
+
+#ifndef CK_WORKAROUND_SWDEV_XXXXXX_THREAD_WISE_COPY_V1R5_TYPE_CONVERT_ISSUE
+#define CK_WORKAROUND_SWDEV_XXXXXX_THREAD_WISE_COPY_V1R5_TYPE_CONVERT_ISSUE 1
 #endif
 
 namespace ck {
@@ -124,7 +154,15 @@ namespace ck {
 enum InMemoryDataOperationEnum_t
 {
     Set,
-    AtomicAdd
+    AtomicAdd,
+    Add
+};
+
+enum ActivTypeEnum_t
+{
+    None,
+    LeakyRelu,
+    Sigmoid
 };
 
 // index type

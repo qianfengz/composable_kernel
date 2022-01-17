@@ -17,7 +17,6 @@
 #include "host_conv.hpp"
 #include "device_tensor.hpp"
 #include "online_device_dynamic_generic_reduction.hpp"
-#include "online_driver_common.hpp"
 #include "online_reduce_common.hpp"
 #include "host_generic_reduction.hpp"
 
@@ -285,6 +284,8 @@ static void check_cmdline_arguments(int argc, char* argv[])
         scales.push_back(1.0f);
         scales.push_back(0.0f);
     };
+
+    std::cout << "init_method=" << init_method << ", nrepeat=" << nrepeat << std::endl; 
 
     if(reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MIN ||
        reduceOp == ReduceTensorOp_t::REDUCE_TENSOR_MAX ||
