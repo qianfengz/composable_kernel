@@ -142,14 +142,16 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
     if(get_thread_local_1d_id() == 0)
         *static_cast<decltype(src2dDesc_2)*>(p_src2dDesc) = src2dDesc_2;
 
-    auto dst1dDesc = transform_tensor_descriptor(
-            dstDesc,
-            make_tuple(make_merge_transform(tupleDstLengths)),
-            make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
-            make_tuple(Sequence<0>{}));
+    const auto dstPad = srcPad1;
+
+    auto dst1dDesc_2 =
+            transform_tensor_descriptor(dstDesc,
+                                        make_tuple(make_pad_transform(invariantLen, 0, dstPad)),
+                                        make_tuple(Sequence<0>{}),
+                                        make_tuple(Sequence<0>{}));
 
     if(get_thread_local_1d_id() == 0)
-        *static_cast<decltype(dstDesc)*>(p_dst1dDesc) = dstDesc;
+        *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2;
 };
 
 template <index_t srcDims>
@@ -170,7 +172,7 @@ struct get_ref_desc_types
     static constexpr auto ref_toReduceLen  = ref_src2dDesc.GetLength(Number<1>{});
 
     using refType_src2dDesc_padded =
-        decltype(transform_tensor_descriptor(ref_src2dDesc{},
+        decltype(transform_tensor_descriptor(ref_src2dDesc,
                                              make_tuple(make_pad_transform(ref_invariantLen, 0, 2),
                                                         make_pad_transform(ref_toReduceLen, 0, 2)),
                                              make_tuple(Sequence<0>{}, Sequence<1>{}),
@@ -252,7 +254,7 @@ extern "C" __global__ void gridwise_generic_set_out_buffer(float initVal,
     const void* buffer      = cast_pointer_to_generic_address_space(ws_global);
     const void* p_dst1dDesc = static_cast<const char*>(buffer) + 2048;
 
-    const auto dst1dDesc = get_reduction_dst1d_descriptor<dst1d_need_padding>(p_dst1dDesc);
+    const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded*>(p_dst1dDesc);
 
     using gridwise_1d_set_value =
         Gridwise_1d_global_buffer_set_value<blockSize, dstDataType, decltype(dst1dDesc)>;

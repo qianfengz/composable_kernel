@@ -63,23 +63,6 @@ struct get_ref_2d_desc_types
     using refType_2dDesc = decltype(ref_2d_desc);
 };
 
-template <typename invariantDims, typename toReduceDims>
-struct get_ref_2d_desc_types<2, invariantDims, toReduceDims>
-{
-    static constexpr auto ref_toReduceDimLengths =
-        typename uniform_sequence_gen<toReduceDims::Size(), 8>::type{};
-    static constexpr auto ref_invariantDimLengths =
-        typename uniform_sequence_gen<invariantDims::Size(), 8>::type{};
-
-    static constexpr auto ref_lengths = typename uniform_sequence_gen<2, 8>::type{};
-
-    // don't have to use accurate strides to get an expected referrence type
-    static constexpr auto ref_desc = make_naive_tensor_descriptor(make_tuple_from_seq(ref_lengths),
-                                                                  make_tuple_from_seq(ref_lengths));
-
-    using refType_2dDesc = decltype(ref_desc);
-};
-
 template <index_t dims>
 struct get_ref_1d_desc_types
 {
@@ -95,17 +78,6 @@ struct get_ref_1d_desc_types
         make_tuple(Sequence<0>{}));
 
     using refType_1dDesc = decltype(ref_1d_desc);
-};
-
-template <>
-struct get_ref_1d_desc_types<1>
-{
-    static constexpr auto ref_lengths = typename uniform_sequence_gen<1, 8>::type{};
-
-    static constexpr auto ref_desc = make_naive_tensor_descriptor(make_tuple_from_seq(ref_lengths),
-                                                                  make_tuple_from_seq(ref_lengths));
-
-    using refType_1dDesc = decltype(ref_desc);
 };
 
 } // end of namespace wrapper

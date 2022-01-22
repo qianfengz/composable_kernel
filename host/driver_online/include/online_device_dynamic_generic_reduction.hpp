@@ -864,7 +864,7 @@ void device_dynamic_generic_reduction_olc(online_compile::Handle* handle,
     else
         std::tie(tunable, GridSize) = configurator.getConfigForBlockWise<TSrcId>(need_indices, invariantLength, toReduceLength, dim0_lowest_size, dim1_lowest_size, vectorDim); 
 
-    std::cout << "gridSize = " << GridSize << std::endl; 
+    std::cout << "gridSize = " << GridSize <<", in_dev_buf = " << in_dev_buf.GetDeviceBuffer() << std::endl; 
 
     const bool useGlobalAtomicAdd =
         useGlobalAtomicAddReduce(reduceOp, Driver::get_type_enum_from_type<TDst>(), beta);

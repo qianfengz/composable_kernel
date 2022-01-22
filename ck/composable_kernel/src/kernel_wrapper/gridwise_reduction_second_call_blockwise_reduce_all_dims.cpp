@@ -92,14 +92,16 @@ gridwise_generic_reduce_2_prepare(int GridSize, int BlkGroupSize, void* __restri
     if(get_thread_local_1d_id() == 0)
          *static_cast<decltype(src2dDesc_2)*>(p_src2dDesc) = src2dDesc_2;
 
-    auto dst1dDesc = transform_tensor_descriptor(
-            dstDesc,
-            make_tuple(make_merge_transform(tupleDstLengths)),
-            make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
-            make_tuple(Sequence<0>{}));
+    const auto dstPad = srcPad1;
+
+    auto dst1dDesc_2 =
+            transform_tensor_descriptor(dstdDesc,
+                                        make_tuple(make_pad_transform(invariantLen, 0, dstPad)),
+                                        make_tuple(Sequence<0>{}),
+                                        make_tuple(Sequence<0>{}));
 
     if(get_thread_local_1d_id() == 0)
-        *static_cast<decltype(dst1dDesc)*>(p_dst1dDesc) = dst1dDesc;
+        *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2;
 };
 
 struct get_ref_desc_types

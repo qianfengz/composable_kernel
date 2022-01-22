@@ -112,7 +112,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
     const auto tupleDstStrides = make_tuple(1);
 
     const auto srcDesc = make_naive_tensor_descriptor(tupleSrcLengths, tupleSrcStrides);
-    const auto dstDesc       = make_naive_tensor_descriptor(tupleDstLengths, tupleDstStrides);
+    const auto dstDesc = make_naive_tensor_descriptor(tupleDstLengths, tupleDstStrides);
 
     const auto one_dim_srcDesc = transform_tensor_descriptor(
             srcDesc,
@@ -145,14 +145,15 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
     if(get_thread_local_1d_id() == 0)
          *static_cast<decltype(src2dDesc_2)*>(p_src2dDesc) = src2dDesc_2;
 
-    auto dst1dDesc = transform_tensor_descriptor(
-            dstDesc,
-            make_tuple(make_merge_transform(tupleDstLengths)),
-            make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
-            make_tuple(Sequence<0>{}));
+    const auto dstPad = srcPad1;
+    auto dst1dDesc_2 =
+            transform_tensor_descriptor(dstDesc,
+                                        make_tuple(make_pad_transform(invariantLen, 0, dstPad)),
+                                        make_tuple(Sequence<0>{}),
+                                        make_tuple(Sequence<0>{}));
 
     if(get_thread_local_1d_id() == 0)
-            *static_cast<decltype(dst1dDesc)*>(p_dst1dDesc) = dst1dDesc;
+        *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2;
 };
 
 template <index_t srcDims>
@@ -185,8 +186,6 @@ struct get_ref_desc_types
                                              make_tuple(Sequence<0>{}),
                                              make_tuple(Sequence<0>{})));
 
-    using refType_src2dDesc = decltype(ref_src2dDesc);
-    using refType_dst1dDesc = decltype(ref_dstDesc);
 };
 
 using refType_src2dDesc_padded = typename get_ref_desc_types<srcDims>::refType_src2dDesc_padded;

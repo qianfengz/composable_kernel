@@ -150,12 +150,6 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
                                         make_tuple(invariantDims{}, toReduceDims{}),
                                         make_tuple(Sequence<0>{}, Sequence<1>{}));
 
-    const auto dst1dDesc = transform_tensor_descriptor(
-            dstDesc,
-            make_tuple(make_merge_transform(tupleDstLengths)),
-            make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
-            make_tuple(Sequence<0>{}));
-
     const auto invariantLen = src2dDesc.GetLength(Number<0>{});
     const auto toReduceLen  = src2dDesc.GetLength(Number<1>{});
 
@@ -174,7 +168,13 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
     if(get_thread_local_1d_id() == 0)
         *static_cast<decltype(src2dDesc_2)*>(p_src2dDesc) = src2dDesc_2;
 
-    const auto dstPad = GridSize * dim0_tile_size - invariantLen;
+    const auto dst1dDesc = transform_tensor_descriptor(
+            dstDesc,
+            make_tuple(make_merge_transform(tupleDstLengths)),
+            make_tuple(typename arithmetic_sequence_gen<0, dstDims, 1>::type{}),
+            make_tuple(Sequence<0>{}));
+
+    const auto dstPad = srcPad1;
 
     auto dst1dDesc_2 =
                 transform_tensor_descriptor(dst1dDesc,
@@ -183,6 +183,12 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
                                             make_tuple(Sequence<0>{}));
     if(get_thread_local_1d_id() == 0)
         *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2;
+
+
+    __syncthreads(); 
+
+    printf("111: src2d len0=%d, src2d len1=%d\n", src2dDesc_2.GetLength(Number<0>{}), src2dDesc_2.GetLength(Number<1>{})); 
+    printf("111: src2d size=%d, dst1d size=%d\n", src2dDesc_2.GetElementSpaceSize(), dst1dDesc_2.GetElementSpaceSize()); 
 };
 
 template <index_t srcDims, index_t dstDims, typename invariantDims, typename toReduceDims>
@@ -234,6 +240,9 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
 
     const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded*>(p_src2dDesc);
     const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded*>(p_dst1dDesc);
+
+    //printf("222: src2d size=%d, dst1d size=%d\n", src2dDesc.GetElementSpaceSize(), dst1dDesc.GetElementSpaceSize()); 
+    printf("222: src2d len0=%d, src2d len1=%d\n", src2dDesc.GetLength(Number<0>{}), src2dDesc.GetLength(Number<1>{})); 
 
     preUnaryOpType preUnaryOp(origReduceLen); 
     posUnaryOpType posUnaryOp(origReduceLen); 

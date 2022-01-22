@@ -144,7 +144,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
     if(get_thread_local_1d_id() == 0)
         *static_cast<decltype(src2dDesc_2)*>(p_src2dDesc) = src2dDesc_2;
 
-    const auto dstPad = GridSize * dim0_tile_size - invariantLen;
+    const auto dstPad = srcPad1; 
     auto dst1dDesc_2 =
             transform_tensor_descriptor(dstdDesc,
                                         make_tuple(make_pad_transform(invariantLen, 0, dstPad)),
