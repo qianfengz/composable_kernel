@@ -157,8 +157,8 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
 
     auto src2dDesc_2 =
                transform_tensor_descriptor(src2dDesc,
-                                            make_tuple(make_pad_transform(invariantLen, 0, srcPad1),
-                                                       make_pad_transform(toReduceLen, 0, srcPad2)),
+                                            make_tuple(make_right_pad_transform(invariantLen, srcPad1),
+                                                       make_right_pad_transform(toReduceLen, srcPad2)),
                                             make_tuple(Sequence<0>{}, Sequence<1>{}),
                                             make_tuple(Sequence<0>{}, Sequence<1>{}));
 
@@ -175,7 +175,7 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
 
     auto dst1dDesc_2 =
             transform_tensor_descriptor(dst1dDesc,
-                                        make_tuple(make_pad_transform(invariantLen, 0, dstPad)),
+                                        make_tuple(make_right_pad_transform(invariantLen, dstPad)),
                                         make_tuple(Sequence<0>{}),
                                         make_tuple(Sequence<0>{}));
 
@@ -195,14 +195,14 @@ struct get_ref_desc_types
 
     using refType_src2dDesc_padded =
         decltype(transform_tensor_descriptor(refType_src2dDesc{},
-                                             make_tuple(make_pad_transform(ref_invariantLen, 0, 2),
-                                                        make_pad_transform(ref_toReduceLen, 0, 2)),
+                                             make_tuple(make_right_pad_transform(ref_invariantLen, 2),
+                                                        make_right_pad_transform(ref_toReduceLen, 2)),
                                              make_tuple(Sequence<0>{}, Sequence<1>{}),
                                              make_tuple(Sequence<0>{}, Sequence<1>{})));
     
     using refType_dst1dDesc_padded =
         decltype(transform_tensor_descriptor(refType_dst1dDesc{},
-                                             make_tuple(make_pad_transform(ref_invariantLen, 0, 2)),
+                                             make_tuple(make_right_pad_transform(ref_invariantLen, 2)),
                                              make_tuple(Sequence<0>{}),
                                              make_tuple(Sequence<0>{})));
 };
