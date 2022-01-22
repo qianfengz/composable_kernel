@@ -43,7 +43,7 @@ template <typename srcDataType,
           typename opReduce,
           typename preUnaryOpType,
           typename posUnaryOpType,
-          NanPropagation_t nanPropaOpt,
+          bool propagate_nan,
           index_t BlockSize,
           index_t dim0_thread_cluster_size,
           index_t dim1_thread_cluster_size,
@@ -64,7 +64,7 @@ struct GridwiseReduction_xy_to_x_multiblock_atomic_add
                                                                            dim1_thread_cluster_size,
                                                                            reorder_thread_cluster,
                                                                            opReduce,
-                                                                           nanPropaOpt>;
+                                                                           propagate_nan>;
 
     template <typename T>
     using PassThroughOp = reduce::unary_identic<T, false>;
@@ -74,7 +74,7 @@ struct GridwiseReduction_xy_to_x_multiblock_atomic_add
     static constexpr index_t dim0_BlockTileSize = dim0_thread_cluster_size * dim0_thread_slice_size;
     static constexpr index_t dim1_BlockTileSize = dim1_thread_cluster_size * dim1_thread_slice_size;
 
-    using binop = detail::binop_with_nan_check<nanPropaOpt, opReduce, compType>;
+    using binop = detail::binop_with_nan_check<propagate_nan, opReduce, compType>;
 
     __device__ static void Run(const src2dDescType& src2dDesc,
                                const dst1dDescType& dst1dDesc,
@@ -238,31 +238,32 @@ struct GridwiseReduction_xy_to_x_multiblock_atomic_add
 };
 
 template <index_t BlockSize, typename dataType, typename global1dBufferDescType>
-struct Gridwise_1d_global_buffer_set_value
+__device__ void kernel_buffer_set_value(const global1dBufferDescType global1dBufferDesc,
+                                        dataType* const __restrict__ p_global,
+                                        dataType value)
+
 {
-    __device__ static void Run(const global1dBufferDescType& global1dBufferDesc, dataType* const __restrict__ p_global, dataType value)
+    using PassThroughOp = reduce::unary_identic<dataType, false>;
+
+    constexpr auto I0 = Number<0>{};
+
+    const index_t thread_local_id = get_thread_local_1d_id();
+    const index_t block_global_id = get_block_1d_id();
+
+    const index_t thread_global_id = block_global_id * BlockSize + thread_local_id;
+
+    StaticBuffer<AddressSpaceEnum_t::Vgpr, dataType, 1, true> value_buf;
+
+    value_buf(I0) = value;
+
+    constexpr auto valueBuffDesc = make_naive_tensor_descriptor_packed(make_tuple(Number<1>{}));
+
+    auto global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(
+        p_global, global1dBufferDesc.GetElementSpaceSize());
+
+    if(thread_global_id < global1dBufferDesc.GetElementSize())
     {
-        using PassThroughOp = reduce::unary_identic<dataType, false>;
-
-        constexpr auto I0 = Number<0>{};
-
-        const index_t thread_local_id = get_thread_local_1d_id();
-        const index_t block_global_id = get_block_1d_id();
-
-        const index_t thread_global_id = block_global_id * BlockSize + thread_local_id;
-
-        StaticBuffer<AddressSpaceEnum_t::Vgpr, dataType, 1, true> value_buf;
-
-        value_buf(I0) = value;
-
-        constexpr auto valueBuffDesc = make_naive_tensor_descriptor_packed(make_tuple(Number<1>{}));
-
-        auto global_buf = make_dynamic_buffer<AddressSpaceEnum_t::Global>(
-                            p_global, global1dBufferDesc.GetElementSpaceSize());
-
-        if(thread_global_id < global1dBufferDesc.GetElementSize())
-        {
-             auto threadwise_store = ThreadwiseTensorSliceTransfer_v1r3<dataType,
+        auto threadwise_store = ThreadwiseTensorSliceTransfer_v1r3<dataType,
                                                                    dataType,
                                                                    decltype(valueBuffDesc),
                                                                    global1dBufferDescType,
@@ -274,13 +275,12 @@ struct Gridwise_1d_global_buffer_set_value
                                                                    InMemoryDataOperationEnum_t::Set,
                                                                    1,
                                                                    true>(
-             global1dBufferDesc, make_multi_index(thread_global_id), PassThroughOp{});
+            global1dBufferDesc, make_multi_index(thread_global_id), PassThroughOp{});
 
-             threadwise_store.Run(valueBuffDesc, make_tuple(I0), value_buf, global1dBufferDesc, global_buf);
-        };
-    };
-}; 
-
+        threadwise_store.Run(
+            valueBuffDesc, make_tuple(I0), value_buf, global1dBufferDesc, global_buf);
+    }
+};
 
 } // namespace ck
 #endif

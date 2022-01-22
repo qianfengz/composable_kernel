@@ -54,12 +54,11 @@ using invariantDims = typename arithmetic_sequence_gen<0, num_invariantDims, 1>:
 using toReduceDims  = typename arithmetic_sequence_gen<num_invariantDims, srcDims, 1>::type;
 
 constexpr ReduceTensorOp_t reduceOp          = static_cast<ReduceTensorOp_t>(CK_PARAM_REDUCE_OP);
-constexpr NanPropagation_t nanPropaOpt = CK_PARAM_NAN_PROPAGATE == 0
-                                             ? NanPropagation_t::NOT_PROPAGATE_NAN
-                                             : NanPropagation_t::PROPAGATE_NAN;
 constexpr ReduceTensorIndices_t reduceIndicesOpt = CK_PARAM_REDUCE_INDICES == 0
                                                        ? ReduceTensorIndices_t::NO_INDICES
                                                        : ReduceTensorIndices_t::FLATTENED_INDICES;
+
+constexpr bool propagate_nan = (CK_PARAM_NAN_PROPAGATE == 0)? false : true; 
 
 static_assert(num_invariantDims > 0, "Not all dimensins are reduced for this kernel !!");
 
@@ -183,12 +182,6 @@ extern "C" __global__ void gridwise_generic_reduce_1_prepare(int GridSize,
                                             make_tuple(Sequence<0>{}));
     if(get_thread_local_1d_id() == 0)
         *static_cast<decltype(dst1dDesc_2)*>(p_dst1dDesc) = dst1dDesc_2;
-
-
-    __syncthreads(); 
-
-    printf("111: src2d len0=%d, src2d len1=%d\n", src2dDesc_2.GetLength(Number<0>{}), src2dDesc_2.GetLength(Number<1>{})); 
-    printf("111: src2d size=%d, dst1d size=%d\n", src2dDesc_2.GetElementSpaceSize(), dst1dDesc_2.GetElementSpaceSize()); 
 };
 
 template <index_t srcDims, index_t dstDims, typename invariantDims, typename toReduceDims>
@@ -241,9 +234,6 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
     const auto src2dDesc = *reinterpret_cast<const refType_src2dDesc_padded*>(p_src2dDesc);
     const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded*>(p_dst1dDesc);
 
-    //printf("222: src2d size=%d, dst1d size=%d\n", src2dDesc.GetElementSpaceSize(), dst1dDesc.GetElementSpaceSize()); 
-    printf("222: src2d len0=%d, src2d len1=%d\n", src2dDesc.GetLength(Number<0>{}), src2dDesc.GetLength(Number<1>{})); 
-
     preUnaryOpType preUnaryOp(origReduceLen); 
     posUnaryOpType posUnaryOp(origReduceLen); 
 
@@ -255,7 +245,7 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
                                                                     opReduce,
 								    preUnaryOpType,
 							   	    posUnaryOpType,
-                                                                    nanPropaOpt,
+                                                                    propagate_nan,
                                                                     blockSize,
                                                                     dim0_thread_cluster_size,
                                                                     dim1_thread_cluster_size,

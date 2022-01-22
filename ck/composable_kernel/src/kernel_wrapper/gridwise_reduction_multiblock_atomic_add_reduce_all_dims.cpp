@@ -47,9 +47,7 @@ constexpr index_t blockSize = CK_PARAM_BLOCKSIZE; // tunable
 constexpr index_t srcDims = CK_PARAM_IN_DIMS;
 
 constexpr ReduceTensorOp_t reduceOp          = static_cast<ReduceTensorOp_t>(CK_PARAM_REDUCE_OP);
-constexpr NanPropagation_t nanPropaOpt = CK_PARAM_NAN_PROPAGATE == 0
-                                             ? NanPropagation_t::NOT_PROPAGATE_NAN
-                                             : NanPropagation_t::PROPAGATE_NAN;
+constexpr bool propagate_nan = (CK_PARAM_NAN_PROPAGATE == 0)? false : true; 
 
 constexpr index_t dim0_thread_cluster_size = CK_PARAM_DIM0_THREAD_CLUSTER_SIZE;
 constexpr index_t dim1_thread_cluster_size = CK_PARAM_DIM1_THREAD_CLUSTER_SIZE;
@@ -227,7 +225,7 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
                                                                                opReduce,
                                                                                preUnaryOpType,
                                                                                posUnaryOpType,
-                                                                               nanPropaOpt,
+                                                                               propagate_nan,
                                                                                blockSize,
                                                                                dim0_thread_cluster_size,
                                                                                dim1_thread_cluster_size,
@@ -256,9 +254,6 @@ extern "C" __global__ void gridwise_generic_set_out_buffer(float initVal,
 
     const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded*>(p_dst1dDesc);
 
-    using gridwise_1d_set_value =
-        Gridwise_1d_global_buffer_set_value<blockSize, dstDataType, decltype(dst1dDesc)>;
-
-    gridwise_1d_set_value::Run(
+    kernel_buffer_set_value<blockSize, dstDataType, decltype(dst1dDesc)>(
         dst1dDesc, static_cast<dstDataType* const __restrict__>(p_dst_global), initVal);
 };

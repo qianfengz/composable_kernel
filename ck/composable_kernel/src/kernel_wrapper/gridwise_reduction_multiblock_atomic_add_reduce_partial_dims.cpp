@@ -54,9 +54,7 @@ using invariantDims = typename arithmetic_sequence_gen<0, num_invariantDims, 1>:
 using toReduceDims  = typename arithmetic_sequence_gen<num_invariantDims, srcDims, 1>::type;
 
 constexpr ReduceTensorOp_t reduceOp          = static_cast<ReduceTensorOp_t>(CK_PARAM_REDUCE_OP);
-constexpr NanPropagation_t nanPropaOpt = CK_PARAM_NAN_PROPAGATE == 0
-                                             ? NanPropagation_t::NOT_PROPAGATE_NAN
-                                             : NanPropagation_t::PROPAGATE_NAN;
+constexpr bool propagate_nan = (CK_PARAM_NAN_PROPAGATE == 0)? false : true; 
 
 static_assert(num_invariantDims > 0, "Not all dimensins are reduced for this kernel !!");
 
@@ -246,7 +244,7 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
                                                                                opReduce,
                                                                                preUnaryOpType,
                                                                                posUnaryOpType,
-                                                                               nanPropaOpt,
+                                                                               propagate_nan,
                                                                                blockSize,
                                                                                dim0_thread_cluster_size,
                                                                                dim1_thread_cluster_size,
@@ -274,9 +272,6 @@ extern "C" __global__ void gridwise_generic_set_out_buffer(float initVal,
 
     const auto dst1dDesc = *reinterpret_cast<const refType_dst1dDesc_padded*>(p_dst1dDesc);
 
-    using gridwise_1d_set_value =
-        Gridwise_1d_global_buffer_set_value<blockSize, dstDataType, decltype(dst1dDesc)>;
-
-    gridwise_1d_set_value::Run(
+    kernel_buffer_set_value<blockSize, dstDataType, decltype(dst1dDesc)>(
         dst1dDesc, static_cast<dstDataType* const __restrict__>(p_dst_global), initVal);
 };

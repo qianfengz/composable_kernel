@@ -54,12 +54,10 @@ using invariantDims = typename arithmetic_sequence_gen<0, num_invariantDims, 1>:
 using toReduceDims  = typename arithmetic_sequence_gen<num_invariantDims, srcDims, 1>::type;
 
 constexpr ReduceTensorOp_t reduceOp          = static_cast<ReduceTensorOp_t>(CK_PARAM_REDUCE_OP);
-constexpr NanPropagation_t nanPropaOpt = CK_PARAM_NAN_PROPAGATE == 0
-                                             ? NanPropagation_t::NOT_PROPAGATE_NAN
-                                             : NanPropagation_t::PROPAGATE_NAN;
 constexpr ReduceTensorIndices_t reduceIndicesOpt = CK_PARAM_REDUCE_INDICES == 0
                                                        ? ReduceTensorIndices_t::NO_INDICES
                                                        : ReduceTensorIndices_t::FLATTENED_INDICES;
+constexpr bool propagate_nan = (CK_PARAM_NAN_PROPAGATE == 0)? false : true; 
 
 static_assert(num_invariantDims > 0, "Not all dimensins are reduced for this kernel !!");
 
@@ -251,7 +249,7 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
                                                                              opReduce,
                                                                              preUnaryOpType,
                                                                              posUnaryOpType,
-                                                                             nanPropaOpt,
+                                                                             propagate_nan,
                                                                              blockSize,
                                                                              dim0_thread_cluster_size,
                                                                              dim1_thread_cluster_size,

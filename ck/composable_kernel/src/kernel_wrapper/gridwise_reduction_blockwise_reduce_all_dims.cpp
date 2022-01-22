@@ -47,12 +47,10 @@ constexpr index_t blockSize = CK_PARAM_BLOCKSIZE; // tunable
 constexpr index_t srcDims = CK_PARAM_IN_DIMS;
 
 constexpr ReduceTensorOp_t reduceOp          = static_cast<ReduceTensorOp_t>(CK_PARAM_REDUCE_OP);
-constexpr NanPropagation_t nanPropaOpt = CK_PARAM_NAN_PROPAGATE == 0
-                                             ? NanPropagation_t::NOT_PROPAGATE_NAN
-                                             : NanPropagation_t::PROPAGATE_NAN;
 constexpr ReduceTensorIndices_t reduceIndicesOpt = CK_PARAM_REDUCE_INDICES == 0
                                                        ? ReduceTensorIndices_t::NO_INDICES
                                                        : ReduceTensorIndices_t::FLATTENED_INDICES;
+constexpr bool propagate_nan = (CK_PARAM_NAN_PROPAGATE == 0)? false : true; 
 
 constexpr bool indexable    = reduce_binary_operator<compType, reduceOp>::indexable;
 constexpr bool need_indices = indexable && (reduceIndicesOpt != ReduceTensorIndices_t::NO_INDICES);
@@ -225,7 +223,7 @@ extern "C" __global__ void gridwise_generic_reduce_1(int origReduceLen,
                                                                    opReduce,
                                                                    preUnaryOpType,
                                                                    posUnaryOpType,
-                                                                   nanPropaOpt,
+                                                                   propagate_nan,
                                                                    blockSize,
                                                                    dim0_thread_cluster_size,
                                                                    dim1_thread_cluster_size,
